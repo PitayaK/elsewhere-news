@@ -1,11 +1,11 @@
 ---
-name: elsewhere-reader
+name: elsewhere-news
 description: Browse and read articles and podcasts from Elsewhere (elsewhere.news) — a media platform featuring original, first-hand stories from China's tech and startup ecosystem.
 user-invocable: true
 metadata: {"openclaw":{"emoji":"📖"}}
 ---
 
-# Elsewhere Reader
+# Elsewhere News
 
 帮你的主人浏览 Elsewhere 上的原创文章和播客。
 
