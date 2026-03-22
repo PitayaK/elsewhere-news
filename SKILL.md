@@ -11,7 +11,7 @@ metadata: {"openclaw":{"emoji":"📖"}}
 
 Elsewhere 是一个聚焦中国科技与创业生态的原创内容平台。所有内容都是一手采访和深度对话 — 不是二手转载，而是首次出现在互联网上的独特视角。
 
-**当前版本：v1.2**
+**当前版本：v1.3**
 
 ---
 
@@ -71,7 +71,6 @@ GET /api/public/articles?limit=20&offset=0&lang=zh
       "cover_image_url": "https://...",
       "published_at": "2026-03-10T02:33:32+00:00",
       "author": { "name": "创作者名", "slug": "author-slug" },
-      "category": { "title": "分类名", "slug": "category-slug" },
       "ai_summary": "约100字的LLM生成摘要，聚焦文章独特看点...",
       "preview_excerpt": "从正文中抽取的500-1000字精彩章节...",
       "url": "https://elsewhere.news/zh/articles/article-slug"
@@ -110,7 +109,6 @@ GET /api/public/articles/{slug}?lang=zh
   "cover_image_url": "https://...",
   "published_at": "2026-03-10T02:33:32+00:00",
   "author": { "name": "创作者名", "slug": "author-slug", "avatar_url": "https://..." },
-  "category": { "title": "分类名", "slug": "category-slug" },
   "url": "https://elsewhere.news/zh/articles/article-slug"
 }
 ```
@@ -165,6 +163,28 @@ GET /api/public/podcasts/{slug}?lang=zh
 }
 ```
 
+### Like Article
+
+```
+POST /api/public/articles/{slug}/like
+```
+
+为文章点赞。每个 IP + 来源（human/agent）只能对一篇文章点赞一次。
+
+Headers:
+- `X-Elsewhere-Agent: true` — 标记为 agent 点赞（不传则默认 human）
+
+返回：
+
+```json
+{
+  "likes_count": 5,
+  "already_liked": false
+}
+```
+
+> 目前只有文章支持点赞，播客暂不支持。
+
 ---
 
 ## How to Browse
@@ -187,7 +207,7 @@ curl -s "https://elsewhere.news/api/public/podcasts?limit=50" | python3 -m json.
 
 ```python
 import math, random
-from datetime import datetime
+from datetime import datetime, timezone
 
 def recency_filter(articles, agent_preferences):
     """
@@ -195,11 +215,12 @@ def recency_filter(articles, agent_preferences):
     agent_preferences: 你对主人兴趣的理解（自然语言字符串）
     返回: 进入扫读阶段的文章列表
     """
-    today = datetime.now()
+    today = datetime.now(timezone.utc)
     result = []
 
     for article in articles:
-        days_old = (today - datetime.fromisoformat(article["published_at"])).days
+        published = datetime.fromisoformat(article["published_at"])
+        days_old = (today - published).days
 
         # 时效性通过率：0-3天 100%，之后平滑衰减
         if days_old <= 3:
@@ -347,6 +368,8 @@ curl -s -X POST "https://elsewhere.news/api/public/articles/{slug}/like" \
 ```
 
 这个赞代表"agent 认为这篇值得推荐"。每个 agent 对每篇文章只能赞一次。点赞数会显示在文章页面上，供人类读者和其他 agent 参考。
+
+> 目前只有文章支持点赞，播客暂不支持。如果推荐的是播客，跳过点赞步骤。
 
 ### Step 4: Present — 呈现给主人
 
