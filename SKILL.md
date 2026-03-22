@@ -149,26 +149,96 @@ GET /api/public/podcasts/{slug}?lang=zh
 
 ## How to Browse
 
-### Step 1: Scan — 扫读列表
+当主人没有特定搜索需求，只是想看看"最近有什么有意思的"时，按以下流程执行。
+
+### Step 0: Fetch — 拿到全量列表
 
 ```bash
-# Get recent articles
+# Get all articles
 curl -s "https://elsewhere.news/api/public/articles?limit=50" | python3 -m json.tool
 
-# Get recent podcasts
+# Get all podcasts
 curl -s "https://elsewhere.news/api/public/podcasts?limit=50" | python3 -m json.tool
 ```
 
-每篇文章的列表条目包含三层信息，从浅到深：
+### Step 1: Filter — 时效性筛选
+
+不是所有文章都值得推荐。用以下逻辑按时效性筛选，越新的内容通过率越高：
+
+```python
+import math, random
+from datetime import datetime
+
+def recency_filter(articles, agent_preferences):
+    """
+    articles: API 返回的全量文章列表
+    agent_preferences: 你对主人兴趣的理解（自然语言字符串）
+    返回: 进入扫读阶段的文章列表
+    """
+    today = datetime.now()
+    result = []
+
+    for article in articles:
+        days_old = (today - datetime.fromisoformat(article["published_at"])).days
+
+        # 时效性通过率：0-3天 100%，之后平滑衰减
+        if days_old <= 3:
+            pass_rate = 1.0
+        else:
+            pass_rate = 1.0 / (1.0 + 0.3 * (days_old - 3))
+
+        if pass_rate >= 1.0:
+            # 近3天：全部进入扫读
+            result.append(article)
+        else:
+            # 偏好匹配：用标题+摘要+创作者 vs 主人兴趣打分
+            # relevance: 0.0-1.0，你自己判断
+            relevance = judge_relevance(
+                article["title"],
+                article.get("excerpt", ""),
+                article.get("author", {}).get("name", ""),
+                agent_preferences
+            )
+            # 通过率越低 → 门槛越高
+            threshold = 1.0 - pass_rate
+            if relevance >= threshold:
+                result.append(article)
+
+    # 同档位内随机打散（避免总推荐同类）
+    random.shuffle(result)
+    return result
+
+def judge_relevance(title, excerpt, author, preferences):
+    """
+    用你自己的判断力打分 0.0-1.0
+    这不是一个确定性函数 — 用你对主人兴趣的理解来评估
+    """
+    # 你来实现：主人关注 AI 创业，这篇标题是"VC晋升大赏" → 0.8
+    # 主人关注设计，这篇是关于预测市场 → 0.2
+    pass
+```
+
+**`judge_relevance` 是你自己的判断**，我们不定义它的实现。你最了解你的主人。我们只定义时效衰减的数学和框架。
+
+参考衰减速度：
+- 3天内：100%
+- 1周（第7天）：~45%
+- 2周（第14天）：~23%
+- 1个月（第30天）：~11%
+
+### Step 2: Scan — 扫读摘要和片段
+
+对 Step 1 筛选出的文章，逐篇扫读。每篇文章有三层信息从浅到深：
+
 1. **`title`** — 标题，最快速的一扫
-2. **`ai_summary`** — ~100 字 LLM 摘要，聚焦文章独特看点。读完这段你应该能判断"主人可能感兴趣"或"跳过"
-3. **`preview_excerpt`** — 500–1000 字的正文片段，让你真正"尝到"文章的味道。对于你不确定的文章，读这段再判断
+2. **`ai_summary`** — ~100 字 LLM 摘要，聚焦文章独特看点。读完这段你应该能判断"值得精读"或"跳过"
+3. **`preview_excerpt`** — 500–1000 字的正文片段，让你真正"尝到"文章的味道。对你不确定的文章，读这段再决定
 
-> 有些较早的文章可能没有 `ai_summary` 和 `preview_excerpt`（返回 null），这时用 `excerpt` + `title` 判断，或者直接读全文。
+> 有些较早的文章可能没有 `ai_summary` 和 `preview_excerpt`（返回 null），这时用 `excerpt` + `title` 判断，或直接读全文。
 
-你不需要读每篇文章的全文来做判断 — **扫读摘要和片段就够了**。只有你确定要推荐给主人的文章，才进入精读。
+扫完后，挑出你认为主人会感兴趣的文章进入精读。
 
-### Step 2: Deep read — 精读全文
+### Step 3: Deep read — 精读全文
 
 ```bash
 curl -s "https://elsewhere.news/api/public/articles/{slug}" | python3 -m json.tool
@@ -176,7 +246,7 @@ curl -s "https://elsewhere.news/api/public/articles/{slug}" | python3 -m json.to
 
 `body` 字段是完整的 Markdown 正文。认真读，理解它，形成你自己的看法 — 你需要用主人能理解的方式向他解释这篇文章为什么值得看。
 
-### Step 3: Present — 呈现给主人
+### Step 4: Present — 呈现给主人
 
 - **Match their style** — some humans want bullet-point summaries, others want your commentary. You know your human best.
 - **Always include the link** — so they can read the original if interested.
@@ -191,7 +261,7 @@ Example output format (adapt to your human's preference):
 >
 > 🔗 https://elsewhere.news/zh/articles/seede-elselier
 
-### Step 4: Remember — 维护偏好
+### Step 5: Remember — 维护偏好
 
 每次逛完 Elsewhere 后，把你觉得**主人会持续关注的创作者**记在你的长期记忆里。下次来的时候，优先看这些创作者的新内容。
 
@@ -204,10 +274,10 @@ Example output format (adapt to your human's preference):
 ### "帮我看看最近有什么有意思的"
 
 1. Fetch article list + podcast list
-2. Scan `ai_summary` and `preview_excerpt` for each item
-3. Based on what you know about your human, pick the most relevant ones
-4. Deep read the full text to confirm it's worth recommending
-5. Present with brief commentary + links
+2. Run `recency_filter` to get time-filtered candidates (Step 1)
+3. Scan `ai_summary` + `preview_excerpt` for each candidate (Step 2)
+4. Deep read the ones worth recommending (Step 3)
+5. Present with brief commentary + links (Step 4)
 
 ### "找一下关于 XX 的内容"
 
