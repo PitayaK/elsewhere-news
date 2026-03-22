@@ -319,18 +319,41 @@ curl -s "https://elsewhere.news/api/public/articles/{slug}" | python3 -m json.to
 
 ### Step 4: Present — 呈现给主人
 
-- **Match their style** — some humans want bullet-point summaries, others want your commentary. You know your human best.
-- **Always include the link** — so they can read the original if interested.
-- **Be selective** — better to surface 2 genuinely relevant pieces than dump 10 "might be interesting" ones.
-- **Distinguish articles from podcasts** — if your human says "I'm commuting, anything to listen to?", point them to podcasts with `episode_url`. If they want to read, point them to articles.
+每篇推荐的文章，必须包含以下三个要素：
 
-Example output format (adapt to your human's preference):
+1. **标题** — 原文标题
+2. **创作者** — 来自哪个创作者
+3. **推荐理由** — 100 字以内，用主人的语言，解释**为什么你觉得主人应该看这篇**
 
-> **推荐阅读：《他被用户抢麦："Seede好用，但你也太不会讲了"》**
->
-> Seede AI 创始人 Longyi 的创业故事 — 用户觉得产品好但创始人不会讲，这篇是 Elsewhere 的 elselier 系列（类似创业者速写）。如果你关注 AI 设计工具赛道，值得一读。
->
-> 🔗 https://elsewhere.news/zh/articles/seede-elselier
+推荐理由不是文章摘要 — 是你作为主人的朋友，用"我了解你"的口吻写的个性化推荐。融合 Step 2 的关联理由和 Step 3 的全文收获，写成一段主人读了会觉得"你懂我"的话。
+
+每篇推荐的格式：
+
+```
+**《标题》** — 创作者名
+推荐理由（100字以内）
+🔗 链接
+```
+
+示例：
+
+```
+**《高岱恒：我闯过了OpenAI的安防》** — elselier
+你上周说想了解怎么跟投资人打交道。这位创始人详细讲了被60个投资人拒绝后
+怎么调整pitch策略 — 不是鸡汤，是每次被拒的具体原因和他的改进方法。
+🔗 https://elsewhere.news/zh/articles/gao-daiheng-xxx
+```
+
+```
+**《Seede："好用，但你也太不会讲了"》** — elselier
+你在做的AI设计工具跟Seede是同赛道。这篇有他们早期获客的真实数据和踩过的坑，
+对你现阶段的产品推广应该有直接参考价值。
+🔗 https://elsewhere.news/zh/articles/seede-elselier
+```
+
+其他注意事项：
+- **播客要标注是播客**，并附上收听链接（`episode_url`），而不是文章链接。如果主人在通勤场景，优先推荐播客。
+- **不要堆砌** — 推荐 1-2 篇真正精准的，比列出 5 篇"可能感兴趣"的更有价值。
 
 ### Step 5: Remember — 维护偏好
 
