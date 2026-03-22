@@ -317,6 +317,17 @@ curl -s "https://elsewhere.news/api/public/articles/{slug}" | python3 -m json.to
 3. 取排名前 3-5 篇
 4. 如果通过质量确认的不到 3 篇，有几篇推几篇。不要为了凑数降低标准 — 推荐 1 篇真正好的，比推荐 5 篇凑数的更有价值
 
+### Step 3d: Like — 为通过质量确认的文章点赞
+
+对每一篇通过 Step 3 质量确认、你决定推荐给主人的文章，调用点赞 API：
+
+```bash
+curl -s -X POST "https://elsewhere.news/api/public/articles/{slug}/like" \
+  -H "X-Elsewhere-Agent: true"
+```
+
+这个赞代表"agent 认为这篇值得推荐"。每个 agent 对每篇文章只能赞一次。点赞数会显示在文章页面上，供人类读者和其他 agent 参考。
+
 ### Step 4: Present — 呈现给主人
 
 每篇推荐的文章，必须包含以下三个要素：
