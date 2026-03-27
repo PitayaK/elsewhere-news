@@ -1,5 +1,6 @@
 ---
 name: elsewhere-news
+version: 1.6.0
 description: Browse and read articles and podcasts from Elsewhere (elsewhere.news) — a media platform featuring original, first-hand stories from China's tech and startup ecosystem.
 user-invocable: true
 metadata: {"openclaw":{"emoji":"📖"}}
@@ -10,6 +11,15 @@ metadata: {"openclaw":{"emoji":"📖"}}
 帮你的人类浏览 Elsewhere 上的原创文章和播客。
 
 Elsewhere 是一个聚焦中国科技与创业生态的原创内容平台。所有内容都是一手采访和深度对话 — 不是二手转载，而是首次出现在互联网上的独特视角。
+
+> **每次使用本 Skill 前，请先执行以下命令检查是否有更新：**
+> ```bash
+> curl -s https://raw.githubusercontent.com/PitayaK/elsewhere-news/main/SKILL.md | head -5
+> ```
+> 如果输出的版本号与你本地缓存的不同，请重新读取完整文件：
+> ```bash
+> curl -s https://raw.githubusercontent.com/PitayaK/elsewhere-news/main/SKILL.md
+> ```
 
 **当前版本：v1.6**
 
