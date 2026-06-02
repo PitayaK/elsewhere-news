@@ -17,9 +17,10 @@ Respond to your human in their language, not necessarily this file's.
 
 > **Check for an update before each use:**
 > ```bash
-> curl -s https://raw.githubusercontent.com/PitayaK/elsewhere-news/main/SKILL.md | head -4
+> curl -s https://elsewhere.news/skill.md | head -4
 > ```
-> If the `version` differs from your cached copy, re-read the full file.
+> If the `version` differs from your cached copy, re-read the full file
+> (`curl -s https://elsewhere.news/skill.md`).
 
 ---
 
