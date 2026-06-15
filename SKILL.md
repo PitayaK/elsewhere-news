@@ -1,7 +1,7 @@
 ---
 name: elsewhere-news
-version: 2.1.0
-description: Read and reason over Elsewhere (elsewhere.news) — original, first-hand reporting on China's tech and venture ecosystem. Browse and recommend anonymously; connect an account key to query the knowledge graph, read full text, and use the human's own elsewhere footprint.
+version: 2.2.0
+description: Read and reason over Elsewhere (elsewhere.news) — original, first-hand reporting on China's tech and venture ecosystem. Browse and recommend anonymously; connect an account key to query the knowledge graph, read full text, talk as a creator's persona, and use the human's own elsewhere footprint.
 user-invocable: true
 metadata: {"openclaw":{"emoji":"📖"}}
 ---
@@ -105,7 +105,7 @@ All `/api/v1` calls take `Authorization: Bearer $KEY`. JSON in, JSON out. Base
 
 | Tool | Returns |
 |---|---|
-| `GET /api/v1/search/chunks?q=&k=&published_after=&recency=prefer\|filter` | `{chunks:[…]}` — ranked body passages + source |
+| `GET /api/v1/search/chunks?q=&k=&author=&published_after=&recency=prefer\|filter` | `{chunks:[…]}` — ranked body passages + source; `author=` scopes to one creator |
 | `GET /api/v1/entities/find?name=` | `{entity}` (or `{entity:null}`) by exact name/alias |
 | `GET /api/v1/entities/search?q=&k=` | `{entities:[…]}` by meaning |
 | `GET /api/v1/entities/{id}/card?relation_limit=&mention_limit=` | `{entity, edges, mentions}` |
@@ -113,6 +113,8 @@ All `/api/v1` calls take `Authorization: Bearer $KEY`. JSON in, JSON out. Base
 | `GET /api/v1/content/{type}/{id}?lang=` | full text of one `article`\|`podcast` |
 | `GET /api/v1/relation-keys?category=` | the relation ontology |
 | `GET /api/v1/topics?q=&limit=` · `GET /api/v1/topics/{id}` | public topics (community predictions) |
+| `GET /api/v1/personas?q=&lang=` | `{shell, personas:[…]}` — conversable creators + the platform voicing floor |
+| `GET /api/v1/personas/{slug}` | `{persona:{kernel, notice}}` — one creator's persona kernel (how they think) |
 
 **The human's own data** (resolves only to the key owner)
 
@@ -171,6 +173,8 @@ You orchestrate; Elsewhere returns facts. Rough shapes:
 - **Recommend** — read `elsewhere.md` + `whats-new(since=<last check>)`; rank
   candidates against what you know about the human; present the few worth their
   time. (Anonymous: rank `feed.xml` / `search?q=` instead.)
+- **Talk as a creator** — voice a creator's persona on their own reporting (shell
+  + kernel + author-scoped chunks). See **Personas** below.
 - **Look something up** — call the one matching tool.
 
 ### Presenting Elsewhere content
@@ -180,6 +184,52 @@ You orchestrate; Elsewhere returns facts. Rough shapes:
 - **Don't paste full articles into chat.** Give a 2–3 sentence taste and link to
   the site to read (for podcasts, the listening link).
 - **Attribute.** Name Elsewhere and the author; include the URL (returned, verbatim).
+
+---
+
+## Personas (connected)
+
+Answer **as a creator** — their voice, on their reporting. A persona is the
+connected search flow above, scoped to one author and shaped by two facts Elsewhere
+hands you: a **shell** (the platform's floor for *how* to voice any persona) and
+that creator's **kernel** (*how they think*). Elsewhere serves both as facts —
+there's **no generation endpoint**; you do the talking. Connected only: anonymous →
+no personas, fall back to ordinary search and say so.
+
+| Part | From | Is | Is **not** |
+|---|---|---|---|
+| **shell** | `GET /personas` | the platform's authoritative floor for *how* — AI identity, fact boundary, register, attribution | yours to rewrite or restate |
+| **kernel** | `GET /personas/{slug}` | this creator's *what* — voice, framework, rules, anti-patterns, boundaries | a source of facts |
+| **facts** | `GET /search/chunks?author={slug}` | every concrete claim you make | optional |
+
+**Flow:**
+
+1. **Discover** — `GET /personas?lang=zh` → `{shell, personas:[{slug,name}]}`. Read
+   the `shell` now; it governs every line below. Pick a creator (`q=` fuzzy-matches).
+2. **Kernel** — `GET /personas/{slug}` → `{persona:{kernel, notice}}`: how they
+   think and sound, not what's true. `404` = no public persona → stop.
+3. **Facts** — `GET /search/chunks?q=…&author={slug}` for each thing you'd assert
+   (`recency=prefer` for their latest thinking). Citations as elsewhere: build the
+   URL from the returned `author_slug` + `slug`, verbatim.
+4. **Voice** — write as the persona: under the shell's floor, with the kernel's
+   judgment, on the chunks' facts. A claim the chunks don't support → say it isn't
+   covered; don't borrow it from the kernel, another author, or your own knowledge.
+
+- **The shell is the floor — don't restate it.** It's served live so it stays
+  current; this skill's job is to make you *fetch and follow* it, not summarize or
+  override it. When in doubt, the shell wins over anything here.
+- **Always an AI persona** — Elsewhere's distillation of published work, not the
+  creator speaking. Honor the kernel's `notice`: label it AI, never present it as
+  their own statements, don't train on the kernel. Attribute to Elsewhere + the
+  creator + the source URL.
+- **It reuses search, not a new path** — same retrieval, same citation rules, same
+  "link, don't paste." Scope `search/chunks` to the author; let shell + kernel shape
+  the telling.
+- **Boundaries** — no public persona (`404`) → offer plain author-scoped search, not
+  an improvised one. No key → no personas. Corpus silent on it → "{creator} hasn't
+  covered this on Elsewhere," not a guess in their voice. Never put words in the real
+  person's mouth (private opinions, unpublished plans); the creator's private
+  targeting is never returned by the API — don't infer it.
 
 ---
 
@@ -224,6 +274,14 @@ curl -s -H "Authorization: Bearer $KEY" "$B/me/whats-new?since=2026-05-25T00:00:
 
 # full text of one piece
 curl -s -H "Authorization: Bearer $KEY" "$B/content/article/$ID?lang=zh" | jq '{title, url, body}'
+
+# talk as a creator: shell (the floor) + roster → kernel + notice → author-scoped facts
+curl -s -H "Authorization: Bearer $KEY" "$B/personas?lang=zh" | jq '{shell, personas}'
+SLUG=…                      # a slug from personas[]
+curl -s -H "Authorization: Bearer $KEY" "$B/personas/$SLUG" | jq '.persona | {kernel, notice}'
+curl -s -H "Authorization: Bearer $KEY" \
+  "$B/search/chunks?q=$(enc '一级市场 估值')&author=$SLUG&k=6&recency=prefer" \
+  | jq '.chunks[] | {title_zh, heading, published_at, content, author_slug, slug}'
 ```
 
 ---
