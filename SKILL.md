@@ -1,6 +1,6 @@
 ---
 name: elsewhere-news
-version: 2.2.0
+version: 2.3.0
 description: Read and reason over Elsewhere (elsewhere.news) — original, first-hand reporting on China's tech and venture ecosystem. Browse and recommend anonymously; connect an account key to query the knowledge graph, read full text, talk as a creator's persona, and use the human's own elsewhere footprint.
 user-invocable: true
 ---
@@ -47,10 +47,28 @@ KEY="${ELSEWHERE_KEY:-$(cat ~/.config/elsewhere/key 2>/dev/null)}"
 [ -n "$KEY" ] && echo connected || echo anonymous
 ```
 
-Empty `$KEY` → you're anonymous. When the human first gives you a key, persist it
-so future sessions find it: prefer your platform's secret store; if you have none,
-write it to `~/.config/elsewhere/key` and `chmod 600` it. If they pasted it in
-chat, suggest rotating it at `/me/connections` afterward.
+Empty `$KEY` → you're anonymous.
+
+**Persist to the exact path the resolver reads — always, immediately.** The moment
+a human gives you a key, before anything else, write it to the canonical file so
+every future session and every other agent resolves it identically:
+
+```bash
+mkdir -p ~/.config/elsewhere
+printf '%s' 'els_live_…' > ~/.config/elsewhere/key   # no trailing newline
+chmod 600 ~/.config/elsewhere/key
+```
+
+A key the next session can't find is the same as no key. So don't stash it *only*
+in chat, a project-local `.env`, or a platform secret store the resolver above
+can't see — those leave the next agent reporting anonymous. (Mirror it to your
+secret store too if you like, but this file stays the source of truth.) If they
+pasted it in chat, suggest rotating it at `/me/connections` afterward.
+
+**If the human says they already have a key but you resolve empty,** it was saved
+somewhere non-canonical (chat-only, another project, an unread secret store) — not
+a reason to stay anonymous. Ask them to paste it once and persist it with the
+command above.
 
 ---
 
