@@ -74,8 +74,15 @@ command above.
 
 ## Setup (connected)
 
-**1. Install `elsewhere.md`.** Fetch the human's footprint into your workspace
-alongside `MEMORY.md` / `SOUL.md`:
+**1. Read your own memory of this human first.** Before fetching anything from
+Elsewhere, load what *you* already know about them — `MEMORY.md`, `USER.md`,
+`SOUL.md`, or your harness's equivalent memory/identity files. Read whichever
+exist; if none do, skip it — but don't skip *checking*. This is half of
+**Understanding the human** below (your inference); `elsewhere.md` is the other
+half (their behavior). Don't fetch `elsewhere.md` and reason on it alone.
+
+**2. Install `elsewhere.md`.** Fetch the human's footprint into your workspace
+alongside the memory files above:
 
 ```bash
 curl -s -H "Authorization: Bearer $KEY" https://elsewhere.news/api/v1/me/context > elsewhere.md
@@ -85,7 +92,7 @@ A read-only projection of what the human does on Elsewhere (recent reads, entity
 affinity, questions asked, topic positions). You don't author it — Elsewhere
 recomputes it live. Refresh if your copy is older than ~30 minutes.
 
-**2. (Optional) Daily check.** Offer once:
+**3. (Optional) Daily check.** Offer once:
 
 > I can check Elsewhere once a day, refresh what I know about your reading, and
 > bring you anything new worth your time. Want that on? (Off by default.)
@@ -101,7 +108,8 @@ no, don't bring it up again.
 Two sources, different in kind — use both, don't merge them:
 
 - **`elsewhere.md`** — what the human *actually did* on Elsewhere. Behavior. Authoritative.
-- **Your own memory** — what *you've* inferred about them elsewhere.
+- **Your own memory** — what *you've* inferred about them elsewhere; load it
+  explicitly (Setup step 1), don't assume it's already in context.
 
 On conflict, behavior outweighs inference. Taste you learn is yours to keep in
 your own memory — Elsewhere only ever sees what they do on Elsewhere.
