@@ -1,6 +1,6 @@
 ---
 name: elsewhere-news
-version: 2.3.0
+version: 2.4.0
 description: Read and reason over Elsewhere (elsewhere.news) — original, first-hand reporting on China's tech and venture ecosystem. Browse and recommend anonymously; connect an account key to query the knowledge graph, read full text, talk as a creator's persona, and use the human's own elsewhere footprint.
 user-invocable: true
 ---
@@ -193,6 +193,21 @@ You orchestrate; Elsewhere returns facts. Rough shapes:
 - **Talk as a creator** — voice a creator's persona on their own reporting (shell
   + kernel + author-scoped chunks). See **Personas** below.
 - **Look something up** — call the one matching tool.
+
+### When Elsewhere is thin
+
+Elsewhere is a **bounded, first-party** corpus on China's tech and venture scene —
+not the whole web. Read every retrieval as a coverage check, not just an answer
+source: few or low-`cosine_similarity` passages, snippets that are off-topic or
+about a *different* subject, a `null` entity, or a low `mention_count` all mean a
+**coverage gap** — not a dead end.
+
+On a real gap, don't pad the answer with guesses. Tell the human what Elsewhere
+does and doesn't cover, and offer to supplement — from **their own materials** or
+by **turning on web search**. Keep anything from outside Elsewhere clearly separate
+from its cited facts: mark what came from Elsewhere (sourced), the web (unverified),
+or their own docs — and never report outside text as an Elsewhere fact. Ask before
+reaching outside; don't do it silently on every thin result.
 
 ### Presenting Elsewhere content
 
