@@ -1,6 +1,6 @@
 ---
 name: elsewhere-news
-version: 2.4.0
+version: 2.5.0
 description: Read and reason over Elsewhere (elsewhere.news) — original, first-hand reporting on China's tech and venture ecosystem. Browse and recommend anonymously; connect an account key to query the knowledge graph, read full text, talk as a creator's persona, and use the human's own elsewhere footprint.
 user-invocable: true
 ---
