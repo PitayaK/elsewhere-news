@@ -1,332 +1,181 @@
 ---
 name: elsewhere-news
-version: 2.5.0
-description: Read and reason over Elsewhere (elsewhere.news) — original, first-hand reporting on China's tech and venture ecosystem. Browse and recommend anonymously; connect an account key to query the knowledge graph, read full text, talk as a creator's persona, and use the human's own elsewhere footprint.
+version: 2.5.1
+description: Read and reason over Elsewhere (elsewhere.news): first-hand reporting on China's tech and venture ecosystem. Browse public content anonymously, or connect an els_live key for search, graph, full text, personas, and personal context.
 user-invocable: true
 ---
 
 # Elsewhere
 
-Elsewhere (elsewhere.news) is original first-hand reporting on China's tech and
-venture ecosystem — interviews and in-depth profiles, not aggregated news. Treat
-it as primary source. Bilingual: Chinese originals, English translations
-(`lang=zh|en`, default `zh`; zh is usually richer).
+Elsewhere (elsewhere.news) is first-hand reporting on China's tech and venture ecosystem: interviews, profiles, and analysis, not aggregated news. Treat it as a primary-source corpus. Elsewhere returns facts; you reason, rank, synthesize, and explain.
 
-Respond to your human in their language, not necessarily this file's.
+Reply in the user's language. Prefer `lang=zh` unless the user asks otherwise; Chinese originals are often richer.
 
-The division of labor is fixed: **Elsewhere returns facts; you reason.** Planning,
-synthesis, ranking, and taste are yours.
+Before use, check for a newer canonical skill:
 
-> **Check for an update before each use:**
-> ```bash
-> curl -s https://elsewhere.news/skill.md | head -4
-> ```
-> If the `version` differs from your cached copy, re-read the full file.
+```bash
+curl -s https://elsewhere.news/skill.md | head -4
+```
 
----
+If the online `version` differs, read the full online file.
 
-## Two tiers
+## Modes
 
-- **Anonymous** (no key): `llms.txt` + site search + RSS + public pages. Enough to
-  browse latest and recommend, linking the human to the site to read.
-- **Connected** (an `els_live_…` key): unlocks the `/api/v1` tools — knowledge
-  graph, semantic search, full text, and the human's own footprint
-  (what they've read, asked, and bet on).
+Anonymous mode: no key. Use public discovery only. Good for browsing latest items and linking users to Elsewhere. Do not scrape article HTML for full text.
 
----
+Connected mode: an `els_live_...` key unlocks `/api/v1`: semantic search, knowledge graph, full text, personas, the user's own context, sessions, topics, and what's-new feed.
 
-## The key (connected)
+## Key
 
-A key (`els_live_…`) comes from `https://elsewhere.news/me/connections`.
-
-**Resolve it the same way every session** — this is the canonical contract, so
-tier detection is deterministic across sessions and agents:
+Resolve connection status the same way every session:
 
 ```bash
 KEY="${ELSEWHERE_KEY:-$(cat ~/.config/elsewhere/key 2>/dev/null)}"
 [ -n "$KEY" ] && echo connected || echo anonymous
 ```
 
-Empty `$KEY` → you're anonymous.
+Keys come from `https://elsewhere.news/me/connections`.
 
-**Persist to the exact path the resolver reads — always, immediately.** The moment
-a human gives you a key, before anything else, write it to the canonical file so
-every future session and every other agent resolves it identically:
+If the user gives a key, immediately persist it to the canonical path:
 
 ```bash
 mkdir -p ~/.config/elsewhere
-printf '%s' 'els_live_…' > ~/.config/elsewhere/key   # no trailing newline
+printf '%s' 'els_live_...' > ~/.config/elsewhere/key
 chmod 600 ~/.config/elsewhere/key
 ```
 
-A key the next session can't find is the same as no key. So don't stash it *only*
-in chat, a project-local `.env`, or a platform secret store the resolver above
-can't see — those leave the next agent reporting anonymous. (Mirror it to your
-secret store too if you like, but this file stays the source of truth.) If they
-pasted it in chat, suggest rotating it at `/me/connections` afterward.
+Do not store the key only in chat, a project `.env`, or an unread secret store. If the key was pasted into chat, suggest rotating it afterward.
 
-**If the human says they already have a key but you resolve empty,** it was saved
-somewhere non-canonical (chat-only, another project, an unread secret store) — not
-a reason to stay anonymous. Ask them to paste it once and persist it with the
-command above.
+## Connected Setup
 
----
-
-## Setup (connected)
-
-**1. Read your own memory of this human first.** Before fetching anything from
-Elsewhere, load what *you* already know about them — `MEMORY.md`, `USER.md`,
-`SOUL.md`, or your harness's equivalent memory/identity files. Read whichever
-exist; if none do, skip it — but don't skip *checking*. This is half of
-**Understanding the human** below (your inference); `elsewhere.md` is the other
-half (their behavior). Don't fetch `elsewhere.md` and reason on it alone.
-
-**2. Install `elsewhere.md`.** Fetch the human's footprint into your workspace
-alongside the memory files above:
+Before fetching from Elsewhere, check any available local memory about the user (`MEMORY.md`, `USER.md`, `SOUL.md`, or equivalent). Then refresh the user's Elsewhere context:
 
 ```bash
-curl -s -H "Authorization: Bearer $KEY" https://elsewhere.news/api/v1/me/context > elsewhere.md
+curl -s -H "Authorization: Bearer $KEY" \
+  "https://elsewhere.news/api/v1/me/context?lang=zh" > elsewhere.md
 ```
 
-A read-only projection of what the human does on Elsewhere (recent reads, entity
-affinity, questions asked, topic positions). You don't author it — Elsewhere
-recomputes it live. Refresh if your copy is older than ~30 minutes.
+Refresh `elsewhere.md` if it is older than about 30 minutes. Treat it as behavior: what the user actually did on Elsewhere. Treat your own memory as inference. If they conflict, behavior wins.
 
-**3. (Optional) Daily check.** Offer once:
+## API
 
-> I can check Elsewhere once a day, refresh what I know about your reading, and
-> bring you anything new worth your time. Want that on? (Off by default.)
+Base: `https://elsewhere.news/api/v1`
 
-If yes, set a once-daily task that re-reads this SKILL.md (if version changed),
-refreshes `elsewhere.md`, runs the **Recommend** flow, and sends the result. If
-no, don't bring it up again.
+Connected requests require:
 
----
-
-## Understanding the human
-
-Two sources, different in kind — use both, don't merge them:
-
-- **`elsewhere.md`** — what the human *actually did* on Elsewhere. Behavior. Authoritative.
-- **Your own memory** — what *you've* inferred about them elsewhere; load it
-  explicitly (Setup step 1), don't assume it's already in context.
-
-On conflict, behavior outweighs inference. Taste you learn is yours to keep in
-your own memory — Elsewhere only ever sees what they do on Elsewhere.
-
----
-
-## Tools (connected)
-
-All `/api/v1` calls take `Authorization: Bearer $KEY`. JSON in, JSON out. Base
-`https://elsewhere.news`.
-
-> **Full request + response schemas live at**
-> `https://elsewhere.news/api/v1/reference.md` **— `curl` it before your first
-> use of an endpoint.** The tables below are an index; field names matter (it's
-> `title_zh`, not `title`), and the reference has a real JSON example for each.
-
-**Corpus + knowledge graph**
-
-| Tool | Returns |
-|---|---|
-| `GET /api/v1/search/chunks?q=&k=&author=&published_after=&recency=prefer\|filter` | `{chunks:[…]}` — ranked body passages + source; `author=` scopes to one creator |
-| `GET /api/v1/entities/find?name=` | `{entity}` (or `{entity:null}`) by exact name/alias |
-| `GET /api/v1/entities/search?q=&k=` | `{entities:[…]}` by meaning |
-| `GET /api/v1/entities/{id}/card?relation_limit=&mention_limit=` | `{entity, edges, mentions}` |
-| `GET /api/v1/entities/{id}/edges?dir=in\|out&key=&limit=` | `{from, edges}` from a seed entity (traverse) |
-| `GET /api/v1/content/{type}/{id}?lang=` | full text of one `article`\|`podcast` |
-| `GET /api/v1/relation-keys?category=` | the relation ontology |
-| `GET /api/v1/topics?q=&limit=` · `GET /api/v1/topics/{id}` | public topics (community predictions) |
-| `GET /api/v1/personas?q=&lang=` | `{shell, personas:[…]}` — conversable creators + the platform voicing floor |
-| `GET /api/v1/personas/{slug}` | `{persona:{kernel, notice}}` — one creator's persona kernel (how they think) |
-
-**The human's own data** (resolves only to the key owner)
-
-| Tool | Returns |
-|---|---|
-| `GET /api/v1/me/context?lang=` | the `elsewhere.md` markdown |
-| `GET /api/v1/me/sessions?limit=` · `/{id}` | their past Elsewhere Q&A sessions / one session's turns |
-| `GET /api/v1/me/topics?limit=&lang=` | topics they've participated in |
-| `GET /api/v1/me/whats-new?since=<ISO>&lang=` | new content on entities they follow (+ `ai_summary`/`excerpt` per item) + resolved topics |
-
-**The two shapes you'll touch most** (full set in `reference.md`):
-
-```
-search/chunks → chunks[]: { content_id, content_type, title_zh, title_en, slug,
-                            author_slug, author_name_zh, heading, content,
-                            cosine_similarity, published_at }
-card edge     → { subject_id, object_id, subject_name, object_name, canonical_key,
-                  category, predicate_zh, confidence, is_ongoing,
-                  valid_from, valid_until, evidence_count }
+```text
+Authorization: Bearer $KEY
 ```
 
-KG edges carry the relation, confidence, time, and `evidence_count` — fetch the
-article via `content/{id}` for grounding. Card `mentions` now carry `title`/`url`/
-`published_at`, so a citation is usable without a follow-up call.
+Before first use of an endpoint, read schemas and examples:
 
-**Links — never invent a slug.** Endpoints that return a `url` field
-(`content`, `whats-new`, card `mentions`): use it **verbatim**. To link a
-`search/chunks` hit, build `https://elsewhere.news/zh/{author_slug}/{slug}` from
-the **exact** `author_slug` + `slug` fields returned — never translate, prettify,
-or guess the slug (a "pretty" Chinese slug 404s).
+```bash
+curl -s https://elsewhere.news/api/v1/reference.md
+```
 
-**Limits.** ~60 req/min, ~3000 req/day, ~400 distinct entities/day. `401` = bad/
-missing key. `429` = over a limit — back off (honor `Retry-After`). `410` = retired
-endpoint. Don't poll; once per session or on request is enough.
+Use exact field names from the reference.
 
----
+Common endpoints:
 
-## Anonymous (no key)
+```text
+GET /search/chunks?q=&k=&author=&published_after=&recency=prefer|filter
+GET /entities/find?name=
+GET /entities/search?q=&k=
+GET /entities/{id}/card?relation_limit=&mention_limit=
+GET /entities/{id}/edges?dir=in|out&key=&limit=
+GET /content/{type}/{id}?lang=
+GET /relation-keys?category=
+GET /topics?q=&limit=
+GET /topics/{id}
+GET /personas?q=&lang=
+GET /personas/{slug}
+GET /me/context?lang=
+GET /me/sessions?limit=
+GET /me/sessions/{id}
+GET /me/topics?limit=&lang=
+GET /me/whats-new?since=<ISO>&lang=
+```
 
-Discovery surfaces stay public — **don't scrape article HTML for text**; use these:
+Frequent shapes:
 
-- `https://elsewhere.news/llms.txt` — site overview + most-covered entities. **Start here.**
-- `https://elsewhere.news/{zh|en}/search?q=<query>` — full-text search + an AI overview.
-- `https://elsewhere.news/feed.xml` — RSS, latest articles + podcasts with summaries + links.
-- Public article / podcast / entity pages — link the human to read; don't paste them.
+```text
+search/chunks -> chunks[]:
+{ content_id, content_type, title_zh, title_en, slug, author_slug,
+  author_name_zh, heading, content, cosine_similarity, published_at }
 
----
+card edge:
+{ subject_id, object_id, subject_name, object_name, canonical_key,
+  category, predicate_zh, confidence, is_ongoing,
+  valid_from, valid_until, evidence_count }
+```
 
-## How to use
+Links: if an endpoint returns `url`, use it verbatim. For `search/chunks`, build:
 
-You orchestrate; Elsewhere returns facts. Rough shapes:
+```text
+https://elsewhere.news/zh/{author_slug}/{slug}
+```
 
-- **Answer a question** — `search/chunks` for evidence + `entities/find|search` →
-  `card`/`edges` for relations; synthesize. `content/{id}` for full text.
-  (Anonymous: `llms.txt` + `search?q=`.)
-- **Recommend** — read `elsewhere.md` + `whats-new(since=<last check>)`; rank
-  candidates against what you know about the human; present the few worth their
-  time. (Anonymous: rank `feed.xml` / `search?q=` instead.)
-- **Talk as a creator** — voice a creator's persona on their own reporting (shell
-  + kernel + author-scoped chunks). See **Personas** below.
-- **Look something up** — call the one matching tool.
+Never invent, translate, prettify, or guess slugs.
 
-### When Elsewhere is thin
+Limits: roughly 60 requests/min, 3000 requests/day, 400 distinct entities/day. `401` means missing/bad key. `429` means back off and honor `Retry-After`. `410` means retired endpoint.
 
-Elsewhere is a **bounded, first-party** corpus on China's tech and venture scene —
-not the whole web. Read every retrieval as a coverage check, not just an answer
-source: few or low-`cosine_similarity` passages, snippets that are off-topic or
-about a *different* subject, a `null` entity, or a low `mention_count` all mean a
-**coverage gap** — not a dead end.
+## Anonymous Sources
 
-On a real gap, don't pad the answer with guesses. Tell the human what Elsewhere
-does and doesn't cover, and offer to supplement — from **their own materials** or
-by **turning on web search**. Keep anything from outside Elsewhere clearly separate
-from its cited facts: mark what came from Elsewhere (sourced), the web (unverified),
-or their own docs — and never report outside text as an Elsewhere fact. Ask before
-reaching outside; don't do it silently on every thin result.
+No key means public sources only:
 
-### Presenting Elsewhere content
+```text
+https://elsewhere.news/llms.txt
+https://elsewhere.news/zh/search?q=<query>
+https://elsewhere.news/en/search?q=<query>
+https://elsewhere.news/feed.xml
+```
 
-- **Don't flatten it.** Lead with the concrete detail or number; keep the source's
-  texture; don't turn a blunt founder quote into corporate-speak.
-- **Don't paste full articles into chat.** Give a 2–3 sentence taste and link to
-  the site to read (for podcasts, the listening link).
-- **Attribute.** Name Elsewhere and the author; include the URL (returned, verbatim).
+Do not scrape article HTML. Summarize public discovery surfaces and link users to read on Elsewhere.
 
----
+## Workflows
 
-## Personas (connected)
+Answer a question: use `search/chunks` for evidence; use `entities/find` or `entities/search` for entity resolution; use `card` or `edges` for relationships; use `content/{type}/{id}` when full context is needed.
 
-Answer **as a creator** — their voice, on their reporting. A persona is the
-connected search flow above, scoped to one author and shaped by two facts Elsewhere
-hands you: a **shell** (the platform's floor for *how* to voice any persona) and
-that creator's **kernel** (*how they think*). Elsewhere serves both as facts —
-there's **no generation endpoint**; you do the talking. Connected only: anonymous →
-no personas, fall back to ordinary search and say so.
+Recommend reading: use `elsewhere.md` plus `me/whats-new`. Rank candidates against the user's actual behavior. Present title, author, link, and one concrete reason. Prefer one or two strong picks over a long list.
 
-| Part | From | Is | Is **not** |
-|---|---|---|---|
-| **shell** | `GET /personas` | the platform's authoritative floor for *how* — AI identity, fact boundary, register, attribution | yours to rewrite or restate |
-| **kernel** | `GET /personas/{slug}` | this creator's *what* — voice, framework, rules, anti-patterns, boundaries | a source of facts |
-| **facts** | `GET /search/chunks?author={slug}` | every concrete claim you make | optional |
+Trace relationships: find the entity, fetch `card` or `edges`, then ground important claims in mentions or content. Edges have confidence, time bounds, and evidence counts.
 
-**Flow:**
+Read full text: call `content/article/{id}?lang=zh` or `content/podcast/{id}?lang=zh`. Do not paste whole articles; give a brief taste, key details, and the link.
 
-1. **Discover** — `GET /personas?lang=zh` → `{shell, personas:[{slug,name}]}`. Read
-   the `shell` now; it governs every line below. Pick a creator (`q=` fuzzy-matches).
-2. **Kernel** — `GET /personas/{slug}` → `{persona:{kernel, notice}}`: how they
-   think and sound, not what's true. `404` = no public persona → stop.
-3. **Facts** — `GET /search/chunks?q=…&author={slug}` for each thing you'd assert
-   (`recency=prefer` for their latest thinking). Citations as elsewhere: build the
-   URL from the returned `author_slug` + `slug`, verbatim.
-4. **Voice** — write as the persona: under the shell's floor, with the kernel's
-   judgment, on the chunks' facts. A claim the chunks don't support → say it isn't
-   covered; don't borrow it from the kernel, another author, or your own knowledge.
+Use personas: connected mode only. First call `GET /personas?lang=zh` and follow the returned shell. Then call `GET /personas/{slug}` for the creator kernel. Ground every factual claim with author-scoped `search/chunks?author={slug}`. A persona is an AI distillation from public work, not the real creator speaking. Never invent private opinions, unpublished plans, or unsupported claims.
 
-- **The shell is the floor — don't restate it.** It's served live so it stays
-  current; this skill's job is to make you *fetch and follow* it, not summarize or
-  override it. When in doubt, the shell wins over anything here.
-- **Always an AI persona** — Elsewhere's distillation of published work, not the
-  creator speaking. Honor the kernel's `notice`: label it AI, never present it as
-  their own statements, don't train on the kernel. Attribute to Elsewhere + the
-  creator + the source URL.
-- **It reuses search, not a new path** — same retrieval, same citation rules, same
-  "link, don't paste." Scope `search/chunks` to the author; let shell + kernel shape
-  the telling.
-- **Boundaries** — no public persona (`404`) → offer plain author-scoped search, not
-  an improvised one. No key → no personas. Corpus silent on it → "{creator} hasn't
-  covered this on Elsewhere," not a guess in their voice. Never put words in the real
-  person's mouth (private opinions, unpublished plans); the creator's private
-  targeting is never returned by the API — don't infer it.
+## Coverage Gaps
 
----
+Elsewhere is bounded. Few results, low similarity, off-topic snippets, null entities, or low mention counts usually mean a coverage gap.
 
-## Optional: a way to recommend
+On gaps, do not guess. Say what Elsewhere covers and does not cover. Ask whether to supplement from the user's materials or web search. Keep Elsewhere facts separate from external information.
 
-You don't need this — recommend however you like. But this tends to produce
-recommendations a human trusts:
+## Presentation Rules
 
-1. **Prefer recent**, but let an older piece through if it's a strong match for
-   what the human is into right now.
-2. **One specific reason per candidate, or cut it.** `whats-new` items carry
-   `ai_summary` + `excerpt` — read those (and a `search/chunks` passage if
-   promising) to write one line on why *this* human should read *this*, tied to
-   something concrete about them. "Might be interested" is not a reason; cut it.
-3. **Deep-read the finalists.** Pull `content/{id}`; keep only the ones that pay
-   off beyond their summary.
-4. **Diversity.** Don't hand them five pieces on the same thing.
-5. **Present** each as: title — author — one personal line (why them, why now) — link.
-   One or two precise picks beat five hedged ones.
+Preserve the texture of reporting: concrete details, numbers, people, quotes-in-context, and uncertainty. Do not flatten blunt founder or investor judgments into generic business prose.
 
----
+Attribute substantive claims to Elsewhere and the author. Include links.
 
-## Recipes
+Never paste full articles. Never invent slugs. Never silently mix outside web facts into Elsewhere facts. Do not poll; fetch once per session or per user request.
+
+## Examples
 
 ```bash
 KEY="${ELSEWHERE_KEY:-$(cat ~/.config/elsewhere/key 2>/dev/null)}"
 B=https://elsewhere.news/api/v1
 enc() { jq -rn --arg s "$1" '$s|@uri'; }
 
-# semantic search → titled passages
-curl -s -H "Authorization: Bearer $KEY" "$B/search/chunks?q=$(enc '曹曦 投资 方法论')&k=5" \
+curl -s -H "Authorization: Bearer $KEY" \
+  "$B/search/chunks?q=$(enc '曹曦 投资 方法论')&k=5" \
   | jq '.chunks[] | {title_zh, author_name_zh, published_at, content}'
 
-# entity → its graph edges (find id, then card)
-ID=$(curl -s -H "Authorization: Bearer $KEY" "$B/entities/find?name=$(enc 曹曦)" | jq -r '.entity.id')
-curl -s -H "Authorization: Bearer $KEY" "$B/entities/$ID/card?relation_limit=30" \
+ID=$(curl -s -H "Authorization: Bearer $KEY" \
+  "$B/entities/find?name=$(enc 曹曦)" | jq -r '.entity.id')
+curl -s -H "Authorization: Bearer $KEY" \
+  "$B/entities/$ID/card?relation_limit=30" \
   | jq '.edges[] | {predicate_zh, object_name, evidence_count, is_ongoing}'
 
-# what's new for the human (recommend candidates, with blurbs + real urls)
-curl -s -H "Authorization: Bearer $KEY" "$B/me/whats-new?since=2026-05-25T00:00:00Z" \
-  | jq '.new_content[] | {title, ai_summary, url}'
-
-# full text of one piece
-curl -s -H "Authorization: Bearer $KEY" "$B/content/article/$ID?lang=zh" | jq '{title, url, body}'
-
-# talk as a creator: shell (the floor) + roster → kernel + notice → author-scoped facts
-curl -s -H "Authorization: Bearer $KEY" "$B/personas?lang=zh" | jq '{shell, personas}'
-SLUG=…                      # a slug from personas[]
-curl -s -H "Authorization: Bearer $KEY" "$B/personas/$SLUG" | jq '.persona | {kernel, notice}'
 curl -s -H "Authorization: Bearer $KEY" \
-  "$B/search/chunks?q=$(enc '一级市场 估值')&author=$SLUG&k=6&recency=prefer" \
-  | jq '.chunks[] | {title_zh, heading, published_at, content, author_slug, slug}'
+  "$B/me/whats-new?since=2026-05-25T00:00:00Z&lang=zh" \
+  | jq '.new_content[] | {title, ai_summary, url}'
 ```
-
----
-
-## Notes
-
-- Free and read-only. The only write is liking an article, which requires the
-  human's account (it's their like, not the agent's) — skip it unless they ask.
