@@ -1,6 +1,6 @@
 ---
 name: elsewhere-news
-version: 2.5.2
+version: 2.5.3
 description: Read and reason over Elsewhere (elsewhere.news): first-hand reporting on China's tech and venture ecosystem. Browse public content anonymously, or connect an els_live key for search, graph, full text, personas, and personal context.
 user-invocable: true
 ---
@@ -141,6 +141,8 @@ Do not scrape article HTML. Summarize public discovery surfaces and link users t
 Answer a question: use `search/chunks` for evidence; use `entities/find` or `entities/search` for entity resolution; use `card` or `edges` for relationships; use `content/{type}/{id}` when full context is needed.
 
 Recommend reading: use `elsewhere.md` plus `me/whats-new`. Rank candidates against the user's actual behavior. If the task depends on complete history, page through `me/content-views` and `me/annotations` instead of relying only on the compressed summary. Present title, author, link, and one concrete reason. Prefer one or two strong picks over a long list.
+
+Daily Elsewhere digest: when the user wants ongoing recommendations, offer to create a local scheduled automation (for example, every morning) that refreshes `elsewhere.md`, calls `me/whats-new` since the last run, ranks the new candidates against the user's observed Elsewhere behavior, and sends exactly one article or podcast with a short reason and link. This is opt-in, user-local "pull on a schedule," not a platform push or a server-side recommendation model. Do not create or modify automations without the user's explicit consent. If the host environment provides an automation/schedule tool, use it instead of hand-writing cron files.
 
 Trace relationships: find the entity, fetch `card` or `edges`, then ground important claims in mentions or content. Edges have confidence, time bounds, and evidence counts.
 
