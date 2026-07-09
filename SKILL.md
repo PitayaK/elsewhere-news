@@ -1,6 +1,6 @@
 ---
 name: elsewhere-news
-version: 2.5.1
+version: 2.5.2
 description: Read and reason over Elsewhere (elsewhere.news): first-hand reporting on China's tech and venture ecosystem. Browse public content anonymously, or connect an els_live key for search, graph, full text, personas, and personal context.
 user-invocable: true
 ---
@@ -23,7 +23,7 @@ If the online `version` differs, read the full online file.
 
 Anonymous mode: no key. Use public discovery only. Good for browsing latest items and linking users to Elsewhere. Do not scrape article HTML for full text.
 
-Connected mode: an `els_live_...` key unlocks `/api/v1`: semantic search, knowledge graph, full text, personas, the user's own context, sessions, topics, and what's-new feed.
+Connected mode: an `els_live_...` key unlocks `/api/v1`: semantic search, knowledge graph, full text, personas, the user's own context, full reading/highlight archive, sessions, topics, and what's-new feed.
 
 ## Key
 
@@ -56,6 +56,8 @@ curl -s -H "Authorization: Bearer $KEY" \
 ```
 
 Refresh `elsewhere.md` if it is older than about 30 minutes. Treat it as behavior: what the user actually did on Elsewhere. Treat your own memory as inference. If they conflict, behavior wins.
+
+`elsewhere.md` is a compressed, high-signal working summary, not the full history. When a task needs completeness, drill into the owner-only archive endpoints: `/me/content-views` for the full article/podcast footprint, `/me/annotations` for all highlights and notes, `/me/sessions` for Q&A transcripts, and `/me/topics` for topic participation.
 
 ## API
 
@@ -90,6 +92,8 @@ GET /topics/{id}
 GET /personas?q=&lang=
 GET /personas/{slug}
 GET /me/context?lang=
+GET /me/content-views?type=&limit=&offset=&lang=
+GET /me/annotations?language=&type=&content_id=&limit=&offset=&lang=
 GET /me/sessions?limit=
 GET /me/sessions/{id}
 GET /me/topics?limit=&lang=
@@ -136,7 +140,7 @@ Do not scrape article HTML. Summarize public discovery surfaces and link users t
 
 Answer a question: use `search/chunks` for evidence; use `entities/find` or `entities/search` for entity resolution; use `card` or `edges` for relationships; use `content/{type}/{id}` when full context is needed.
 
-Recommend reading: use `elsewhere.md` plus `me/whats-new`. Rank candidates against the user's actual behavior. Present title, author, link, and one concrete reason. Prefer one or two strong picks over a long list.
+Recommend reading: use `elsewhere.md` plus `me/whats-new`. Rank candidates against the user's actual behavior. If the task depends on complete history, page through `me/content-views` and `me/annotations` instead of relying only on the compressed summary. Present title, author, link, and one concrete reason. Prefer one or two strong picks over a long list.
 
 Trace relationships: find the entity, fetch `card` or `edges`, then ground important claims in mentions or content. Edges have confidence, time bounds, and evidence counts.
 
