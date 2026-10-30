@@ -5,13 +5,12 @@ metadata:
   version: "3.0.0"
   bundle-version: 2
   user-invocable: true
-  compatibility: "Anonymous mode needs web access. Connected mode needs a host with Remote MCP OAuth support for https://elsewhere.news/mcp."
   openclaw:
     emoji: "📖"
     homepage: "https://elsewhere.news"
 ---
 
-# Elsewhere
+# elsewhere-news
 
 Elsewhere provides reporting, podcasts and structured facts on China's tech,
 AI, startups and venture ecosystem. Return evidence for the calling agent to
@@ -20,29 +19,31 @@ and prefer Chinese sources when suitable.
 
 ## Installation and connection
 
-When asked to install, use `https://elsewhere.news/skill.md` as the entry point.
-Skill installation and MCP registration are separate. Preserve other skills
-and servers; reuse a matching resource instead of duplicating it.
+Use `https://elsewhere.news/skill.md` as the Skill installation entry point.
+Connect `https://elsewhere.news/mcp` through the current host's native MCP
+settings and OAuth. Reuse same-URL connections; preserve other skills and
+servers. If needed, install this Skill through the host's supported mechanism.
+Skill installation and MCP connection are separate.
 
-- **Codex:** install [agents/openai.yaml](https://elsewhere.news/.well-known/elsewhere-skill/agents/openai.yaml)
-  as `agents/openai.yaml` in the Skill directory. Before saving, require exactly
-  218 bytes and SHA-256
-  `0c987c48749133c13b1ee7d7cc8efdec2a8343a48bedc712a3069a643a4353ae`.
-  Require exactly one `dependencies.tools` entry: `type: mcp`,
-  `value: elsewhere-news`, `transport: streamable_http`,
-  `url: https://elsewhere.news/mcp`, with only its reviewed `description` as
-  an additional field. Reject other fields/dependencies. On any mismatch,
-  stop installation; do not fetch replacement code or register that server.
-  If tools are absent,
-  add a Streamable HTTP server named `elsewhere-news` with URL
-  `https://elsewhere.news/mcp` in the host's MCP settings, then use its OAuth
-  sign-in. CLI equivalents: `codex mcp add elsewhere-news
-  --url https://elsewhere.news/mcp` and `codex mcp login elsewhere-news`.
-After reload/new session, make one narrow task-required Elsewhere call; only
-authenticated success proves connection. Never invent absent tools, fetch
-tokens or use custom credential helpers. Report hosts without Remote MCP OAuth
-as unsupported. Codex is the initial connection target; do not claim another
-host has been verified merely because it implements MCP.
+After any required reload/new session, make one narrow task-required Elsewhere
+call. Only authenticated success proves connection. Never invent tools,
+fetch/store/transmit tokens or use custom credential helpers.
+
+### Codex example
+
+Install [agents/openai.yaml](https://elsewhere.news/.well-known/elsewhere-skill/agents/openai.yaml)
+as `agents/openai.yaml` in the Skill directory. Before saving, require exactly
+218 bytes and SHA-256
+`0c987c48749133c13b1ee7d7cc8efdec2a8343a48bedc712a3069a643a4353ae`.
+Require exactly one `dependencies.tools` entry: `type: mcp`,
+`value: elsewhere-news`, `transport: streamable_http`,
+`url: https://elsewhere.news/mcp`, with only its reviewed `description` as
+an additional field. Reject other fields/dependencies. On any mismatch,
+stop installation; do not fetch replacement code or register that server.
+If tools are absent, add a Streamable HTTP server named `elsewhere-news` with
+URL `https://elsewhere.news/mcp` in the host's MCP settings, then use its OAuth
+sign-in. CLI equivalents: `codex mcp add elsewhere-news
+--url https://elsewhere.news/mcp` and `codex mcp login elsewhere-news`.
 
 ## Access states
 
