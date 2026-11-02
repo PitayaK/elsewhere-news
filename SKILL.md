@@ -2,7 +2,7 @@
 name: elsewhere-news
 description: Read Elsewhere reporting anonymously, or connect its read-only Remote MCP with host-managed OAuth for cited search, full text, graph data, personas, personal context, and safer connected background tasks.
 metadata:
-  version: "3.0.1"
+  version: "3.0.2"
   bundle-version: 2
   user-invocable: true
   openclaw:
@@ -43,16 +43,30 @@ the current host's native setup instead of stopping after Skill installation:
    zero-unit metadata read such as `list_relation_keys`. Only authenticated
    success proves connection; confirm that state before resuming the task.
 
-Use connection capabilities for the host actually handling this request. In a
-hosted chat, use its installed plugin/native connection; editing a separate
-local Codex configuration does not connect that chat. If no plugin connection
-is installed and the host supports importing plugin archives, install the
-provider's [elsewhere-news package](https://elsewhere.news/.well-known/elsewhere-skill/elsewhere-news-3.0.1.zip)
-through that native installer. It bundles this Skill and one OAuth Remote MCP
-at the exact URL above; do not substitute endpoints or add other connections.
-If native installation, registration or sign-in is unavailable, state the
-exact blocked step and the documented
-next action. Do not invent a connection button, send the user to the Skill
+Use the connection mechanism of the host actually handling this request.
+For hosted chats, reuse an installed Elsewhere plugin connection. If Elsewhere
+tools are absent and a native archive importer is available, install the public
+[elsewhere-news package](https://elsewhere.news/.well-known/elsewhere-skill/elsewhere-news-3.0.2.zip)
+through it. The package contains this Skill and one OAuth Remote MCP at the
+exact URL above. Downloading the ZIP alone does not install or authenticate it.
+
+For ChatGPT or Dots without an automatic installer, give this short, concrete
+next step instead of asking the user to find an unspecified MCP setting:
+open [ChatGPT Plugins](https://chatgpt.com/plugins), select **+ → Add custom MCP
+server**, enter name **elsewhere-news** and URL **https://elsewhere.news/mcp**,
+and choose **OAuth**. Let discovery/DCR configure the client automatically;
+do not request a client secret. Have the user review the native connection
+warning, select **Create as a plugin**, and use **+** to install the resulting
+plugin. Continue the native Elsewhere browser sign-in/consent when prompted.
+If the host requires a new chat, select the installed plugin there; Dots can
+reuse the connected account. Finish with the zero-unit authenticated check.
+
+Do not edit a separate local Codex configuration to connect a hosted chat, or
+create another connection for each conversation or daily task. If the native
+importer or custom-MCP entry is unavailable, state that specific account or
+workspace restriction and point to the
+[public connection guide](https://elsewhere.news/zh/docs#connect-chatgpt).
+Do not invent buttons, use a private plugin ID, send the user to the Skill
 Markdown page to log in, or report connected because files were installed.
 Never fetch/store/transmit tokens or use custom credential helpers.
 
@@ -106,10 +120,10 @@ Validate this exact schema, key order and types; only `version` may advance
 in a compatible instruction update:
 
 ```json
-{"schema":2,"name":"elsewhere-news","version":"3.0.1","bundle-version":2,"transport":"remote-mcp","mcp-url":"https://elsewhere.news/mcp"}
+{"schema":2,"name":"elsewhere-news","version":"3.0.2","bundle-version":2,"transport":"remote-mcp","mcp-url":"https://elsewhere.news/mcp"}
 ```
 
-Compare it with this installed Skill (`3.0.1`, bundle `2`):
+Compare it with this installed Skill (`3.0.2`, bundle `2`):
 
 - Invalid, unavailable, same, or older: continue with this reviewed Skill.
 - Higher version with the same major, bundle `2`, `remote-mcp` transport, and
