@@ -45,8 +45,13 @@ the current host's native setup instead of stopping after Skill installation:
 
 Use connection capabilities for the host actually handling this request. In a
 hosted chat, use its installed plugin/native connection; editing a separate
-local Codex configuration does not connect that chat. If native registration
-or sign-in is unavailable, state the exact blocked step and the documented
+local Codex configuration does not connect that chat. If no plugin connection
+is installed and the host supports importing plugin archives, install the
+provider's [elsewhere-news package](https://elsewhere.news/.well-known/elsewhere-skill/elsewhere-news-3.0.1.zip)
+through that native installer. It bundles this Skill and one OAuth Remote MCP
+at the exact URL above; do not substitute endpoints or add other connections.
+If native installation, registration or sign-in is unavailable, state the
+exact blocked step and the documented
 next action. Do not invent a connection button, send the user to the Skill
 Markdown page to log in, or report connected because files were installed.
 Never fetch/store/transmit tokens or use custom credential helpers.
