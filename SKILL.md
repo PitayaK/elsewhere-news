@@ -2,7 +2,7 @@
 name: elsewhere-news
 description: Read Elsewhere reporting anonymously, or connect its read-only Remote MCP with host-managed OAuth for cited search, full text, graph data, personas, personal context, and safer connected background tasks.
 metadata:
-  version: "3.0.0"
+  version: "3.0.1"
   bundle-version: 2
   user-invocable: true
   openclaw:
@@ -19,15 +19,37 @@ and prefer Chinese sources when suitable.
 
 ## Installation and connection
 
-Use `https://elsewhere.news/skill.md` as the Skill installation entry point.
-Connect `https://elsewhere.news/mcp` through the current host's native MCP
-settings and OAuth. Reuse same-URL connections; preserve other skills and
-servers. If needed, install this Skill through the host's supported mechanism.
-Skill installation and MCP connection are separate.
+Use `https://elsewhere.news/skill.md` as the Skill installation entry point and
+`https://elsewhere.news/mcp` as the Remote MCP URL. The Skill URL serves
+instructions, not a login page. Reading a link or reviewing this Skill alone
+does not authorize installation or account connection.
 
-After any required reload/new session, make one narrow task-required Elsewhere
-call. Only authenticated success proves connection. Never invent tools,
-fetch/store/transmit tokens or use custom credential helpers.
+When the user requests connection, such as “接入使用”, carry the request through
+the current host's native setup instead of stopping after Skill installation:
+
+1. Ensure this Skill and its applicable dependency metadata are installed
+   through the host's supported mechanism. When a plugin supplies the
+   connection, reuse it and the host's native connect prompt. Otherwise inspect
+   native connections and reuse the same MCP URL; register it only if absent.
+   Preserve other skills and servers.
+2. Reuse an authenticated connection. If setup already started OAuth, continue
+   that same flow; otherwise start native sign-in only when needed. Let the
+   host open its authorization flow in the browser; the user signs into their
+   **Elsewhere account** and approves access. The host owns the callback and
+   credential storage. Preserve native consent prompts; do not ask for a
+   ChatGPT account or handle tokens yourself.
+3. Reload or start a new session only if the host requires it, then make one
+   narrow authenticated Elsewhere call. For setup-only verification, prefer a
+   zero-unit metadata read such as `list_relation_keys`. Only authenticated
+   success proves connection; confirm that state before resuming the task.
+
+Use connection capabilities for the host actually handling this request. In a
+hosted chat, use its installed plugin/native connection; editing a separate
+local Codex configuration does not connect that chat. If native registration
+or sign-in is unavailable, state the exact blocked step and the documented
+next action. Do not invent a connection button, send the user to the Skill
+Markdown page to log in, or report connected because files were installed.
+Never fetch/store/transmit tokens or use custom credential helpers.
 
 ### Codex example
 
@@ -40,10 +62,15 @@ Require exactly one `dependencies.tools` entry: `type: mcp`,
 `url: https://elsewhere.news/mcp`, with only its reviewed `description` as
 an additional field. Reject other fields/dependencies. On any mismatch,
 stop installation; do not fetch replacement code or register that server.
-If tools are absent, add a Streamable HTTP server named `elsewhere-news` with
-URL `https://elsewhere.news/mcp` in the host's MCP settings, then use its OAuth
-sign-in. CLI equivalents: `codex mcp add elsewhere-news
---url https://elsewhere.news/mcp` and `codex mcp login elsewhere-news`.
+
+For a local Codex host with authorized CLI access, execute the native setup:
+inspect configured servers, reuse a same-URL server, or run
+`codex mcp add elsewhere-news --url https://elsewhere.news/mcp` if absent.
+Then run `codex mcp login <actual-server-name>` when sign-in is needed so
+Codex starts browser authorization. Use the existing server's name when reusing
+it; do not overwrite a same-name server pointing elsewhere. These commands are
+for local Codex, not a substitute for a hosted chat's connection mechanism.
+Finish with the authenticated check above, not merely a successful add command.
 
 ## Access states
 
@@ -52,10 +79,11 @@ Track one authentication state for the current task:
 - **ANONYMOUS** — no authenticated Elsewhere tool has succeeded. Use only
   public pages, `https://elsewhere.news/llms.txt`, the sitemap, and RSS for
   discovery. Do not claim complete corpus coverage or personal context.
-- **AUTH_REQUIRED** — structured/personal data needs a usable connection. Ask
-  the user to connect `https://elsewhere.news/mcp` through host OAuth. If the
-  tool is exposed, make one narrow task-required call to trigger host auth;
-  otherwise finish installation above. Never handle credentials.
+- **AUTH_REQUIRED** — structured/personal data needs a usable connection. Use
+  the native connection flow above; a user request to connect already supplies
+  setup intent. If the tool is exposed, make one narrow task-required call to
+  trigger host auth. Otherwise complete native registration first. Never handle
+  credentials or treat Skill installation alone as connection success.
 - **CONNECTED** — a task-required authenticated Elsewhere Remote MCP call
   succeeded for this host connection. Further connected calls require it.
 - **REAUTH_REQUIRED** — Elsewhere reports `reauth_required`, or the connection
@@ -73,10 +101,10 @@ Validate this exact schema, key order and types; only `version` may advance
 in a compatible instruction update:
 
 ```json
-{"schema":2,"name":"elsewhere-news","version":"3.0.0","bundle-version":2,"transport":"remote-mcp","mcp-url":"https://elsewhere.news/mcp"}
+{"schema":2,"name":"elsewhere-news","version":"3.0.1","bundle-version":2,"transport":"remote-mcp","mcp-url":"https://elsewhere.news/mcp"}
 ```
 
-Compare it with this installed Skill (`3.0.0`, bundle `2`):
+Compare it with this installed Skill (`3.0.1`, bundle `2`):
 
 - Invalid, unavailable, same, or older: continue with this reviewed Skill.
 - Higher version with the same major, bundle `2`, `remote-mcp` transport, and

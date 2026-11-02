@@ -1,0 +1,23 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "elsewhere-news",
+  "version": "3.0.1",
+  "description": "Read Elsewhere reporting and connect a reader account for read-only research and personal context.",
+  "author": {
+    "name": "Elsewhere"
+  },
+  "homepage": "https://elsewhere.news",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "elsewhere-news",
+        "shortDescription": "Search reporting and context",
+        "longDescription": "Search Elsewhere reporting, podcasts and structured facts. Connect your Elsewhere reader account for read-only personal context.",
+        "developerName": "Elsewhere",
+        "category": "Education & Research",
+        "capabilities": [],
+        "defaultPrompt": "连接我的 elsewhere-news 账号，并确认连接是否可用。"
+      }
+    }
+  }
+}
