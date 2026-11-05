@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 from pathlib import Path
+import re
 import tempfile
 import unittest
 import zipfile
@@ -30,7 +31,6 @@ class PackageTests(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes((SOURCE / target).read_bytes())
         skill = (SOURCE / "SKILL.md").read_text()
-        import re
         skill = re.sub(r"^Client bytes: .+$", f"Client bytes: {len(self.client)}", skill, flags=re.M)
         skill = re.sub(r"^Client SHA-256: .+$", f"Client SHA-256: {hashlib.sha256(self.client).hexdigest()}", skill, flags=re.M)
         (self.root / "SKILL.md").write_text(skill)
@@ -41,6 +41,61 @@ class PackageTests(unittest.TestCase):
     def tearDown(self) -> None:
         BUILDER.ROOT = self.old_root
         self.temporary.cleanup()
+
+    def set_artifact(self, url: str) -> None:
+        path = self.root / "SKILL.md"
+        value, count = re.subn(r"^Reviewed client artifact: `[^`\n]+`$",
+                              f"Reviewed client artifact: `{url}`", path.read_text(), flags=re.M)
+        self.assertEqual(count, 1)
+        path.write_text(value)
+
+    def test_release_and_immutable_same_repository_source_are_valid_downloads(self) -> None:
+        urls = [
+            "https://elsewhere.news/.well-known/elsewhere-skill/scripts/elsewhere-3.1.0.py",
+            "https://raw.githubusercontent.com/PitayaK/elsewhere-news/0123456789abcdef0123456789abcdef01234567/scripts/elsewhere.py",
+        ]
+        for index, url in enumerate(urls):
+            with self.subTest(url=url):
+                self.set_artifact(url)
+                result = BUILDER.build(Path(self.temporary.name) / f"valid-{index}.zip")
+                with zipfile.ZipFile(result["archive"]) as package:
+                    self.assertEqual(package.read("skills/elsewhere-news/scripts/elsewhere.py"), self.client)
+                    self.assertIn(url.encode(), package.read("skills/elsewhere-news/SKILL.md"))
+
+    def test_mutable_foreign_or_modified_download_urls_are_rejected(self) -> None:
+        base = "https://raw.githubusercontent.com/PitayaK/elsewhere-news/"
+        commit = "0123456789abcdef0123456789abcdef01234567"
+        immutable = base + commit + "/scripts/elsewhere.py"
+        bad_urls = [
+            base + "main/scripts/elsewhere.py",
+            base + "refs/heads/main/scripts/elsewhere.py",
+            base + "v3.1.0/scripts/elsewhere.py",
+            base + commit[:-1] + "/scripts/elsewhere.py",
+            base + commit + "0/scripts/elsewhere.py",
+            base + commit.upper() + "/scripts/elsewhere.py",
+            immutable.replace("/PitayaK/", "/AnotherOwner/"),
+            immutable.replace("/elsewhere-news/", "/another-repository/"),
+            immutable.replace("raw.githubusercontent.com", "raw.githubusercontent.com.evil.invalid"),
+            immutable.replace("raw.githubusercontent.com", "raw.githubusercontent.com@evil.invalid"),
+            immutable.replace("https:", "http:"),
+            immutable.replace("/scripts/elsewhere.py", "/scripts/another.py"),
+            immutable + "?download=1",
+            immutable + "#L1",
+            immutable + "/",
+            " " + immutable,
+            "https://elsewhere.news/.well-known/elsewhere-skill/scripts/elsewhere-3.0.2.py",
+        ]
+        for index, url in enumerate(bad_urls):
+            with self.subTest(url=url):
+                self.set_artifact(url)
+                with self.assertRaisesRegex(ValueError, "Wrong reviewed client artifact"):
+                    BUILDER.build(Path(self.temporary.name) / f"invalid-{index}.zip")
+
+    def test_immutable_source_url_does_not_bypass_reviewed_client_integrity(self) -> None:
+        self.set_artifact("https://raw.githubusercontent.com/PitayaK/elsewhere-news/0123456789abcdef0123456789abcdef01234567/scripts/elsewhere.py")
+        (self.root / "scripts/elsewhere.py").write_bytes(self.client + b"# changed\n")
+        with self.assertRaisesRegex(ValueError, "Client differs"):
+            BUILDER.build(Path(self.temporary.name) / "bad-immutable.zip")
 
     def test_exact_bundle_is_deterministic_and_excludes_private_or_native_sources(self) -> None:
         private_marker = "synthetic-private-context-do-not-distribute"

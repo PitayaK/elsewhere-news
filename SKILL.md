@@ -29,6 +29,12 @@ OAuth and calls the existing `https://elsewhere.news/mcp` resource itself.
 Use this client for the whole task. It does not require a host MCP connection
 or a separately installed plugin.
 
+Use one existing, user-authorized persistent execution environment throughout.
+If a cloud runtime cannot use the required secure store and an authorized
+connected computer is available, inspect that computer and run this same client
+there when its capabilities are suitable. Keep later calls in that environment;
+do not copy credentials between runtimes or ask the user to configure MCP.
+
 1. Install this Skill and its reviewed client in the host's supported Skill
    directory, preserving other skills. If installing files individually, get
    the client from the exact reviewed artifact below and verify its byte count
@@ -49,11 +55,11 @@ or a separately installed plugin.
    then continue the user's task. A downloaded file, opened login page or
    completed browser login alone is not proof of connection.
 
-Reviewed client artifact: `https://elsewhere.news/.well-known/elsewhere-skill/scripts/elsewhere-3.1.0.py`
+Reviewed client artifact: `https://raw.githubusercontent.com/PitayaK/elsewhere-news/f44ce7a083d4fe2e85f379b696869782c6d9d6a9/scripts/elsewhere.py`
 
-Client bytes: 40988
+Client bytes: 41345
 
-Client SHA-256: f76e7fab5c76d420d33f6d5c811e7d7a6c88885de9c2d731efa6a8f21ff74ab1
+Client SHA-256: 7584dd75821b1e6c14ad8723113226b4b2ec3e6c07d6ba094cd9b03a1bfc33bf
 
 Do the setup work for the user. Do not ask them to visit a Harness's MCP or
 plugin settings, paste a server URL, copy a key, install a private test plugin,

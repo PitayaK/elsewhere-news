@@ -97,8 +97,16 @@ def reviewed_components() -> tuple[str, dict[str, bytes]]:
     require(re.search(r"^  bundle-version: 3$", frontmatter, re.M) is not None, "Unexpected Skill bundle")
     require(components["skills/elsewhere-news/agents/openai.yaml"] == DISPLAY_METADATA,
             "Unexpected display metadata or host dependency")
-    artifact = f"https://elsewhere.news/.well-known/elsewhere-skill/scripts/elsewhere-{version}.py"
-    require(f"Reviewed client artifact: `{artifact}`" in skill, "Wrong reviewed client artifact")
+    artifacts = re.findall(r"^Reviewed client artifact: `([^`\n]+)`$", skill, re.M)
+    require(len(artifacts) == 1, "Missing or ambiguous reviewed client artifact")
+    artifact = artifacts[0]
+    published_artifact = f"https://elsewhere.news/.well-known/elsewhere-skill/scripts/elsewhere-{version}.py"
+    immutable_source = re.fullmatch(
+        r"https://raw\.githubusercontent\.com/PitayaK/elsewhere-news/[0-9a-f]{40}/scripts/elsewhere\.py",
+        artifact,
+    )
+    require(artifact == published_artifact or immutable_source is not None,
+            "Wrong reviewed client artifact")
     expected_manifest = (
         '{"schema":2,"name":"elsewhere-news","version":"' + version
         + '","bundle-version":3,"transport":"remote-mcp","mcp-url":"' + MCP_URL + '"}'
