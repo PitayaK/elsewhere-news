@@ -35,6 +35,15 @@ connected computer is available, inspect that computer and run this same client
 there when its capabilities are suitable. Keep later calls in that environment;
 do not copy credentials between runtimes or ask the user to configure MCP.
 
+Run the verified client through the host's existing authorized execution path
+with HTTPS and operating-system credential-store access. A restricted workspace
+sandbox can report an unavailable store even when the system store is healthy.
+If an already-authorized broader execution path exists, use it for this same
+reviewed client and repeat the capability check. Preserve platform approvals;
+do not change Harness settings or disable protections. If a required extra
+user approval prevents the two-action journey, report that specific limitation
+rather than claiming the setup met it.
+
 1. Install this Skill and its reviewed client in the host's supported Skill
    directory, preserving other skills. If installing files individually, get
    the client from the exact reviewed artifact below and verify its byte count
