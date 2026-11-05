@@ -17,6 +17,7 @@ import queue
 import re
 import secrets
 import stat
+import subprocess
 import sys
 import threading
 import time
@@ -24,7 +25,6 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-import webbrowser
 from dataclasses import dataclass
 
 
@@ -147,6 +147,17 @@ def _safe(value, secret_values=()):
                 value = value.replace(secret, "[redacted]")
         value = value.encode("utf-8", errors="replace").decode("utf-8")
     return value
+
+
+def _open_default_browser(url):
+    if sys.platform != "darwin":
+        return False
+    try:
+        result = subprocess.run(["/usr/bin/open", url], stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10, check=False)
+        return result.returncode == 0
+    except Exception:
+        return False
 
 
 class MacKeychainStore:
@@ -442,7 +453,7 @@ class SessionClient:
         self.profile = profile
         self.store = store if store is not None else default_store(profile)
         self.transport = transport if transport is not None else HttpTransport()
-        self.browser_opener = browser_opener if browser_opener is not None else webbrowser.open
+        self.browser_opener = browser_opener if browser_opener is not None else _open_default_browser
         self.state_dir = Path(state_dir) if state_dir else (
             Path.home() / ("Library/Application Support" if sys.platform == "darwin" else ".local/share")
             / "elsewhere-news/native-v1" / profile.name)

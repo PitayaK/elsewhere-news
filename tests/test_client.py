@@ -517,5 +517,56 @@ class BoundaryTests(unittest.TestCase):
         self.assertEqual(sorted(released), [990, 991])
 
 
+class BrowserOpenerTests(unittest.TestCase):
+    url = "https://auth.elsewhere.news/oauth/authorize?state=public-state&code_challenge=public-challenge"
+
+    def test_success_uses_exact_open_argv_without_shell_or_inherited_io(self):
+        with patch.object(C.sys, "platform", "darwin"), patch.object(C.subprocess, "run",
+            return_value=subprocess.CompletedProcess([], 0)) as run:
+            self.assertIs(C._open_default_browser(self.url), True)
+        run.assert_called_once_with(["/usr/bin/open", self.url], stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10, check=False)
+        source = SOURCE.read_text()
+        self.assertNotIn("webbrowser", source)
+        self.assertNotIn("osascript", source)
+        self.assertNotIn("AppleScript", source)
+
+    def test_nonzero_returns_false_without_fallback(self):
+        with patch.object(C.sys, "platform", "darwin"), patch.object(C.subprocess, "run",
+            return_value=subprocess.CompletedProcess([], 1)) as run:
+            self.assertIs(C._open_default_browser(self.url), False)
+        self.assertEqual(run.call_count, 1)
+
+    def test_timeout_returns_false_without_fallback(self):
+        with patch.object(C.sys, "platform", "darwin"), patch.object(C.subprocess, "run",
+            side_effect=subprocess.TimeoutExpired("/usr/bin/open", 10)) as run:
+            self.assertIs(C._open_default_browser(self.url), False)
+        self.assertEqual(run.call_count, 1)
+
+    def test_os_exception_returns_false_without_fallback(self):
+        with patch.object(C.sys, "platform", "darwin"), patch.object(C.subprocess, "run",
+            side_effect=OSError("synthetic launch error")) as run:
+            self.assertIs(C._open_default_browser(self.url), False)
+        self.assertEqual(run.call_count, 1)
+
+    def test_unexpected_exception_returns_false_without_fallback(self):
+        with patch.object(C.sys, "platform", "darwin"), patch.object(C.subprocess, "run",
+            side_effect=RuntimeError("synthetic launch error")) as run:
+            self.assertIs(C._open_default_browser(self.url), False)
+        self.assertEqual(run.call_count, 1)
+
+    def test_other_platforms_never_launch_a_browser(self):
+        for platform in ("linux", "win32", "unknown"):
+            with self.subTest(platform=platform), patch.object(C.sys, "platform", platform), patch.object(
+                C.subprocess, "run") as run:
+                self.assertIs(C._open_default_browser(self.url), False)
+            run.assert_not_called()
+
+    def test_session_preserves_injected_opener_and_default_uses_open_helper(self):
+        injected = lambda url: True
+        self.assertIs(C.SessionClient(browser_opener=injected).browser_opener, injected)
+        self.assertIs(C.SessionClient().browser_opener, C._open_default_browser)
+
+
 if __name__ == "__main__":
     unittest.main()
