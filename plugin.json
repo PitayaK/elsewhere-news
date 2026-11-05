@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "elsewhere-news",
-  "version": "3.0.2",
-  "description": "Read Elsewhere reporting and connect a reader account for read-only research and personal context.",
+  "version": "3.1.0",
+  "description": "Connect an Elsewhere reader account through the included client for read-only reporting, knowledge graphs and personal context.",
   "author": {
     "name": "Elsewhere"
   },
@@ -12,7 +12,7 @@
       "interface": {
         "displayName": "elsewhere-news",
         "shortDescription": "Search reporting and context",
-        "longDescription": "Search Elsewhere reporting, podcasts and structured facts. Connect your Elsewhere reader account for read-only personal context.",
+        "longDescription": "Use the included connection client to sign into an Elsewhere reader account in the browser, then search reporting, inspect knowledge graphs and read personal context. Authorization is reused by the client; no host MCP registration is required.",
         "developerName": "Elsewhere",
         "category": "Education & Research",
         "capabilities": [],

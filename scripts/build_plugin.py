@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the four-file, credential-free elsewhere-news portable plugin."""
+"""Build the reviewed Skill/client bundle without host MCP registration."""
 
 from __future__ import annotations
 
@@ -17,15 +17,19 @@ import zipfile
 NAME = "elsewhere-news"
 MCP_URL = "https://elsewhere.news/mcp"
 PLUGIN_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
-MCP_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
-DEPENDENCY_SHA256 = "0c987c48749133c13b1ee7d7cc8efdec2a8343a48bedc712a3069a643a4353ae"
 ROOT = Path(__file__).resolve().parent.parent
 FILES = {
     "plugin.json": "plugin.json",
-    "mcp.json": "mcp.json",
     "skills/elsewhere-news/SKILL.md": "SKILL.md",
     "skills/elsewhere-news/agents/openai.yaml": "agents/openai.yaml",
+    "skills/elsewhere-news/scripts/elsewhere.py": "scripts/elsewhere.py",
 }
+DISPLAY_METADATA = (
+    'interface:\n'
+    '  display_name: "elsewhere-news"\n'
+    '  short_description: "Read reporting and account-linked knowledge graphs"\n'
+    '  default_prompt: "使用 $elsewhere-news 连接我的 Elsewhere 账号，并确认连接是否可用。"\n'
+).encode("utf-8")
 
 
 def require(condition: bool, message: str) -> None:
@@ -56,9 +60,10 @@ def source_bytes(relative: str) -> bytes:
 
 
 def reviewed_components() -> tuple[str, dict[str, bytes]]:
+    for name in ["mcp.json", ".mcp.json", ".app.json"]:
+        require(not (ROOT / name).exists(), "Unexpected auto-discovered connection: " + name)
     components = {target: source_bytes(source) for target, source in FILES.items()}
     plugin = json.loads(components["plugin.json"], object_pairs_hook=unique_object)
-    mcp = json.loads(components["mcp.json"], object_pairs_hook=unique_object)
     require(set(plugin) == {"$schema", "name", "version", "description", "author", "homepage", "extensions"},
             "Unexpected portable plugin fields")
     require(plugin["$schema"] == PLUGIN_SCHEMA and plugin["name"] == NAME, "Wrong plugin identity")
@@ -83,36 +88,29 @@ def reviewed_components() -> tuple[str, dict[str, bytes]]:
     require(all(isinstance(interface[field], str) and interface[field].strip()
                 for field in ["displayName", "shortDescription", "longDescription", "developerName",
                               "category", "defaultPrompt"]), "Empty interface text")
-    expected_mcp = {
-        "$schema": MCP_SCHEMA,
-        "mcpServers": {
-            NAME: {
-                "type": "streamable-http",
-                "url": MCP_URL,
-                "extensions": {
-                    "com.openai": {
-                        "auth": {
-                            "type": "oauth",
-                            "client": {"mode": "dcr"},
-                            "baseScopes": ["elsewhere.read"],
-                            "defaultScopes": ["elsewhere.read", "offline_access"],
-                        }
-                    }
-                },
-            }
-        },
-    }
-    require(mcp == expected_mcp, "Unexpected MCP endpoint, auth, scope or component")
     skill = components["skills/elsewhere-news/SKILL.md"].decode("utf-8")
     require(skill.startswith("---\n") and skill.count("\n---\n") >= 1, "Missing Skill frontmatter")
     frontmatter = skill.split("\n---\n", 1)[0]
     require(re.search(r"^name: elsewhere-news$", frontmatter, re.M) is not None, "Wrong Skill name")
     require(re.search(r'^  version: "' + re.escape(version) + r'"$', frontmatter, re.M) is not None,
             "Skill and plugin versions differ")
-    require(re.search(r"^  bundle-version: 2$", frontmatter, re.M) is not None, "Unexpected Skill bundle")
-    dependency = components["skills/elsewhere-news/agents/openai.yaml"]
-    require(len(dependency) == 218 and hashlib.sha256(dependency).hexdigest() == DEPENDENCY_SHA256,
-            "Dependency metadata differs from the reviewed source")
+    require(re.search(r"^  bundle-version: 3$", frontmatter, re.M) is not None, "Unexpected Skill bundle")
+    require(components["skills/elsewhere-news/agents/openai.yaml"] == DISPLAY_METADATA,
+            "Unexpected display metadata or host dependency")
+    artifact = f"https://elsewhere.news/.well-known/elsewhere-skill/scripts/elsewhere-{version}.py"
+    require(f"Reviewed client artifact: `{artifact}`" in skill, "Wrong reviewed client artifact")
+    expected_manifest = (
+        '{"schema":2,"name":"elsewhere-news","version":"' + version
+        + '","bundle-version":3,"transport":"remote-mcp","mcp-url":"' + MCP_URL + '"}'
+    )
+    require(expected_manifest in skill, "Unexpected version manifest contract")
+    sizes = re.findall(r"^Client bytes: ([1-9][0-9]*)$", skill, re.M)
+    hashes = re.findall(r"^Client SHA-256: ([0-9a-f]{64})$", skill, re.M)
+    require(len(sizes) == 1 and len(hashes) == 1, "Reviewed client pin is missing or unresolved")
+    client = components["skills/elsewhere-news/scripts/elsewhere.py"]
+    require(len(client) == int(sizes[0]) and hashlib.sha256(client).hexdigest() == hashes[0],
+            "Client differs from its reviewed byte count or SHA-256")
+    require(client.startswith(b"#!/usr/bin/env python3\n"), "Unexpected client interpreter")
     return version, components
 
 

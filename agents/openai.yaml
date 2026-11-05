@@ -1,7 +1,4 @@
-dependencies:
-  tools:
-    - type: "mcp"
-      value: "elsewhere-news"
-      description: "Elsewhere read-only reporting and personal context"
-      transport: "streamable_http"
-      url: "https://elsewhere.news/mcp"
+interface:
+  display_name: "elsewhere-news"
+  short_description: "Read reporting and account-linked knowledge graphs"
+  default_prompt: "使用 $elsewhere-news 连接我的 Elsewhere 账号，并确认连接是否可用。"
