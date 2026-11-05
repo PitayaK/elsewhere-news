@@ -7,11 +7,25 @@ Send this to your Agent:
 
 > 请安装并连接 elsewhere-news：https://elsewhere.news/skill.md
 
-The Agent installs the Skill and runs its included connection client. The
-client opens Elsewhere sign-in in the browser, completes authorization, and
-reuses it for later requests. Knowledge-graph and personal reads remain tied
-to the connected Elsewhere account. The Agent does not need to register a
-server in the Harness's MCP settings.
+The Agent installs the Skill and runs its included connection client in its
+own persistent environment. It opens Elsewhere sign-in in the browser and
+reuses authorization for later requests and scheduled work. You sign into your
+Elsewhere reader account and approve access; no MCP settings or key handling
+are needed. Knowledge-graph and personal reads stay tied to that account.
+
+For a cloud Agent, the client and saved state stay on its cloud computer, so
+your own computer can be off. The host must provide persistent private storage,
+HTTPS execution and a browser sign-in path. A disposable runtime cannot retain
+the connection. Each scheduled run reuses the existing connection and verifies
+the expected Elsewhere account before reading data.
+
+The client uses macOS Keychain or a Linux private directory (`0700`) and
+credential file (`0600`) outside workspaces, Skill caches and synchronized or
+exported folders. Linux permissions restrict access by other OS identities;
+the file is not promised to be encrypted or hidden from processes running as
+the same user. The normal client interface never returns tokens to the Agent.
+Authorization uses a fixed HTTPS callback relay, allowing the browser
+and command execution to use different networks.
 
 ## Source and package
 
@@ -42,7 +56,9 @@ it is not bundled or automatically discovered from the repository root.
 
 Version 3.1.0 / bundle 3 adds executable connection code to the earlier
 instruction-only bundle. Development and staging must verify a fresh browser
-login, authenticated graph reads, safe credential persistence, refresh and
-revocation before production release. Runtime execution, an interactive
-browser flow and a safe persistent credential store are required; a successful
-file download alone does not prove this flow works in a given runtime.
+login, authenticated graph reads, credential persistence, refresh and
+revocation before production release. Acceptance also needs a later fresh
+process and a scheduled cloud run with the user's computer off. File permissions
+and a successful download do not establish that the host retains the private
+state across those runs. Host-required approvals and login verification still
+apply.

@@ -103,6 +103,11 @@ class PackageTests(unittest.TestCase):
         (self.root / ".env").write_text(private_marker)
         (self.root / "tests").mkdir()
         (self.root / "tests/not-shipped.py").write_text(private_marker)
+        for location in ["credentials.json", ".local/state/elsewhere-news/production.json",
+                         "private-home/.elsewhere-news/authorization.json"]:
+            private = self.root / location
+            private.parent.mkdir(parents=True, exist_ok=True)
+            private.write_text(private_marker)
         legacy = self.root / "integrations/native-mcp/mcp.json"
         legacy.parent.mkdir(parents=True)
         legacy.write_text(private_marker)

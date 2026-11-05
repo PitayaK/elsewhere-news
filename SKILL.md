@@ -29,46 +29,54 @@ OAuth and calls the existing `https://elsewhere.news/mcp` resource itself.
 Use this client for the whole task. It does not require a host MCP connection
 or a separately installed plugin.
 
-Use one existing, user-authorized persistent execution environment throughout.
-If a cloud runtime cannot use the required secure store and an authorized
-connected computer is available, inspect that computer and run this same client
-there when its capabilities are suitable. Keep later calls in that environment;
-do not copy credentials between runtimes or ask the user to configure MCP.
+Use the current Agent's own persistent execution environment for installation,
+login and later calls. A cloud Agent runs the client on its cloud computer so
+the user's devices can be off. Require a host-provided persistent private user
+home; a temporary or disposable runtime must stop before OAuth. Keep this
+runtime for later tasks instead of moving credentials between computers.
 
-Run the verified client through the host's existing authorized execution path
-with HTTPS and operating-system credential-store access. A restricted workspace
-sandbox can report an unavailable store even when the system store is healthy.
-If an already-authorized broader execution path exists, use it for this same
-reviewed client and repeat the capability check. Preserve platform approvals;
-do not change Harness settings or disable protections. If a required extra
-user approval prevents the two-action journey, report that specific limitation
-rather than claiming the setup met it.
+The client uses macOS Keychain, or a private Linux state directory with mode
+`0700` and credential files with mode `0600`. Linux file storage relies on OS
+permissions; it does not promise encryption or isolation from other processes
+with the same OS identity. State must be outside workspaces, Skill caches,
+synchronized folders and exported artifacts. Never inspect or print its tokens,
+copy its authorization files, or use chat, arguments or environment variables
+to carry credentials.
+
+Use the host's existing authorized execution and browser tools. The install-and-
+connect request already authorizes this client's normal credential persistence;
+do not add a separate question about saving tokens. Honor required platform
+approvals without changing Harness settings or disabling protections. If an
+approval or unavailable capability adds a human step, report that limitation.
 
 1. Install this Skill and its reviewed client in the host's supported Skill
    directory, preserving other skills. If installing files individually, get
    the client from the exact reviewed artifact below and verify its byte count
    and SHA-256 before running it. A mismatch stops installation.
 2. In that installed Skill directory, run
-   `python3 scripts/elsewhere.py capabilities`. Require an available safe
-   credential store and the execution/browser capabilities needed for this
-   runtime before starting an account connection. Never use a plaintext file,
-   project directory, Skill cache, environment variable or chat as a token store.
+   `python3 scripts/elsewhere.py capabilities`. Require available credential
+   storage, HTTPS execution and a browser login path in this same Agent.
+   A writable directory alone does not prove persistence across future tasks;
+   verify that the host retains this private home. Stop if it is temporary.
 3. Run `python3 scripts/elsewhere.py connect`. Reuse its existing authenticated
    connection. For a new connection, let the client open the authorization
    page. If it emits `authorization_required` with `browser_opened: false`,
-   keep that process running and use the host's browser tool to open its
-   `authorization_url` automatically. The user signs into their **Elsewhere
-   reader account** and approves access there. Follow that same flow through
-   its callback; do not start duplicate logins.
+   keep the process running and automatically open its `authorization_url`
+   through the current Agent's browser. Let the user sign into their
+   **Elsewhere reader account** through the host's private sign-in form or
+   browser handoff, and approve access there. The client uses a fixed
+   HTTPS callback relay, so the browser and execution process need not share
+   a `127.0.0.1` network. Follow this pending flow; do not create a second login,
+   rewrite callbacks or expose a local server through a tunnel.
 4. Wait for the client's authenticated, zero-unit connection check to succeed,
    then continue the user's task. A downloaded file, opened login page or
    completed browser login alone is not proof of connection.
 
-Reviewed client artifact: `https://raw.githubusercontent.com/PitayaK/elsewhere-news/f44ce7a083d4fe2e85f379b696869782c6d9d6a9/scripts/elsewhere.py`
+Reviewed client artifact: `https://raw.githubusercontent.com/PitayaK/elsewhere-news/0cc6853596b20367560674af787ca28c32dce9d2/scripts/elsewhere.py`
 
-Client bytes: 41345
+Client bytes: 53604
 
-Client SHA-256: 7584dd75821b1e6c14ad8723113226b4b2ec3e6c07d6ba094cd9b03a1bfc33bf
+Client SHA-256: 7f6a3b1d5e05247f864e1cb87f6301d02fa87ece632801a474c63b2472a16d6d
 
 Do the setup work for the user. Do not ask them to visit a Harness's MCP or
 plugin settings, paste a server URL, copy a key, install a private test plugin,
@@ -77,11 +85,11 @@ requirements. If this runtime cannot execute the client, open/reach its login
 flow, or persist credentials safely, report that concrete failure; do not call
 it connected or substitute anonymous knowledge-graph access.
 
-The client keeps authorization state outside the Skill and working directory.
-Its normal command interface returns connection status or business results,
-not credentials. Do not inspect its credential store or internal OAuth state,
-print tokens, or pass credentials through command arguments. This output rule
-is not a claim of isolation from an adversarial process with the same OS rights.
+The client's normal interface returns status or business results, not credentials.
+Reuse saved authorization across requests and scheduled runs. Starting a new
+conversation or a daily task does not require a new connection. A later runtime
+without the original private state cannot recover it from a visible handle or
+task prompt; report the missing authorization instead of copying tokens.
 
 ## Invoke tools
 
@@ -101,10 +109,11 @@ needed. Neither a local saved state nor a version check proves current access.
 
 For every connected background run, use
 `python3 scripts/elsewhere.py call <tool-name> --non-interactive` for both the
-binding verification and all later data calls. Missing, expired,
-locked or uncertain authorization must stop that run without opening a browser.
-The foreground connect command is the recovery path. Keep the account-binding
-preflight below; never initialize or replace a task's binding during a run.
+binding verification and all later data calls. Let the client refresh normal
+access-token expiry automatically. Missing, revoked, locked or uncertain
+authorization must stop that run without opening a browser. The foreground
+connect command is the recovery path. Keep the account-binding preflight below;
+never initialize or replace a task's binding during a run.
 
 ## Access states
 

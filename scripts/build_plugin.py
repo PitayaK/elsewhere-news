@@ -28,7 +28,7 @@ DISPLAY_METADATA = (
     'interface:\n'
     '  display_name: "elsewhere-news"\n'
     '  short_description: "Read reporting and account-linked knowledge graphs"\n'
-    '  default_prompt: "使用 $elsewhere-news 连接我的 Elsewhere 账号，并确认连接是否可用。"\n'
+    '  default_prompt: "使用 $elsewhere-news 在当前 Agent 中连接我的 Elsewhere 账号并确认可用。"\n'
 ).encode("utf-8")
 
 
