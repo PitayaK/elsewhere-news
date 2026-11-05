@@ -187,8 +187,8 @@ class ClientTests(unittest.TestCase):
 
     def new_client(self):
         return C.SessionClient(PROFILE, store=self.store, transport=self.transport,
-            state_dir=self.temp.name, browser_opener=self.transport.browser, emit=self.events.append,
-            now=lambda: NOW, authorization_timeout=1)
+            state_dir=Path(self.temp.name).resolve(), browser_opener=self.transport.browser, emit=self.events.append,
+            now=lambda: NOW, authorization_timeout=1, callback_mode="loopback")
 
     def assert_error(self, code, fn):
         with self.assertRaises(C.ClientError) as caught:
@@ -386,7 +386,7 @@ class ClientTests(unittest.TestCase):
             try:
                 self.new_client().call("list_relation_keys", {}, True)
             except Exception as error:
-                errors.append(type(error).__name__)
+                errors.append(getattr(error, "code", type(error).__name__))
         threads = [threading.Thread(target=run) for _ in range(3)]
         for thread in threads:
             thread.start()
@@ -440,14 +440,18 @@ class BoundaryTests(unittest.TestCase):
             transport.request("GET", PROFILE.resource_metadata)
         self.assertEqual(error.exception.code, "redirect_rejected")
 
-    def test_linux_and_other_platforms_fail_closed_without_prompt_subprocess(self):
-        for platform in ("linux", "win32"):
-            with patch.object(C.sys, "platform", platform):
-                store = C.default_store(PROFILE)
-                self.assertIsInstance(store, C.UnavailableStore)
-                with self.assertRaises(C.ClientError) as error:
-                    store.prepare()
-                self.assertEqual(error.exception.code, "store_unavailable")
+    def test_linux_uses_private_file_and_windows_remains_unavailable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(C.sys, "platform", "linux"):
+                store = C.default_store(PROFILE, Path(directory).resolve() / "state")
+                self.assertIsInstance(store, C.PosixPrivateFileStore)
+                store.prepare()
+        with patch.object(C.sys, "platform", "win32"):
+            store = C.default_store(PROFILE)
+            self.assertIsInstance(store, C.UnavailableStore)
+            with self.assertRaises(C.ClientError) as error:
+                store.prepare()
+            self.assertEqual(error.exception.code, "store_unavailable")
 
     def test_cli_flags_work_before_and_after_command_without_endpoint_or_store_escape(self):
         for profile in ("production", "staging"):
@@ -476,6 +480,7 @@ class BoundaryTests(unittest.TestCase):
 
     def test_cross_process_lock_has_bounded_busy_and_releases_after_exit(self):
         with tempfile.TemporaryDirectory() as directory:
+            directory = str(Path(directory).resolve())
             code = ("import importlib.util,sys; "
                 "s=importlib.util.spec_from_file_location('lock_client',sys.argv[1]); "
                 "m=importlib.util.module_from_spec(s); sys.modules[s.name]=m; s.loader.exec_module(m); "
@@ -566,6 +571,304 @@ class BrowserOpenerTests(unittest.TestCase):
         injected = lambda url: True
         self.assertIs(C.SessionClient(browser_opener=injected).browser_opener, injected)
         self.assertIs(C.SessionClient().browser_opener, C._open_default_browser)
+
+
+class FakeClock:
+    def __init__(self):
+        self.value, self.delays = 0, []
+    def monotonic(self):
+        return self.value
+    def sleep(self, seconds):
+        self.delays.append(seconds)
+        self.value += seconds
+
+
+class RelayTransport(SyntheticTransport):
+    def __init__(self, store):
+        super().__init__(store)
+        self.flow = "00000000-0000-4000-8000-000000000002"
+        self.start_body = None
+        self.starts = self.polls = 0
+        self.pending = 1
+        self.forever_pending = False
+        self.start_patch = self.complete_patch = None
+        self.poll_override = None
+        self.poll_secret = None
+
+    def request(self, method, url, *, headers=None, body=None):
+        if url == PROFILE.issuer + "/oauth/client/start":
+            self.starts += 1
+            self.start_body = json.loads(body)
+            if set(self.start_body) != {"client_id", "code_challenge", "state", "poll_secret_hash"}:
+                raise AssertionError("unexpected relay start fields")
+            if self.registration["redirect_uris"] != [PROFILE.issuer + "/oauth/client/callback"]:
+                raise AssertionError("relay must use fixed HTTPS callback")
+            value = {"flow_id": self.flow, "redirect_uri": PROFILE.issuer + "/oauth/client/callback",
+                     "expires_in": 300, "interval": 2}
+            value.update(self.start_patch or {})
+            return self.response(value, 201)
+        if url == PROFILE.issuer + "/oauth/client/poll":
+            self.polls += 1
+            values = json.loads(body)
+            self.poll_secret = values["poll_secret"]
+            if (set(values) != {"flow_id", "poll_secret"} or values["flow_id"] != self.flow
+                or hashlib.sha256(values["poll_secret"].encode()).hexdigest() != self.start_body["poll_secret_hash"]):
+                raise AssertionError("polling proof binding missing")
+            if self.poll_override:
+                response = self.poll_override(self.polls)
+                if response is not None:
+                    return response
+            if self.forever_pending or self.polls <= self.pending:
+                return self.response({"status": "pending", "interval": 2})
+            value = {"status": "complete", "state": self.start_body["state"],
+                     "iss": PROFILE.issuer, "code": "synthetic-authorization-code"}
+            value.update(self.complete_patch or {})
+            return self.response(value)
+        return super().request(method, url, headers=headers, body=body)
+
+    def browser(self, url):
+        values = {key: value[0] for key, value in urllib.parse.parse_qs(urllib.parse.urlsplit(url).query).items()}
+        if (urllib.parse.urlsplit(url).scheme + "://" + urllib.parse.urlsplit(url).netloc != PROFILE.issuer
+            or values["redirect_uri"] != PROFILE.issuer + "/oauth/client/callback"
+            or values["state"] != self.start_body["state"]
+            or values["code_challenge"] != self.start_body["code_challenge"]
+            or values["resource"] != PROFILE.resource):
+            raise AssertionError("relay browser authorization binding missing")
+        self.auth_parameters = values
+        return True
+
+
+class RelayTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.store = MemoryStore()
+        self.transport = RelayTransport(self.store)
+        self.clock = FakeClock()
+        self.events = []
+
+    def client(self, **kwargs):
+        return C.SessionClient(PROFILE, store=self.store, transport=self.transport,
+            state_dir=Path(self.temp.name).resolve(), browser_opener=self.transport.browser,
+            emit=self.events.append, now=lambda: NOW, callback_mode="relay",
+            sleep=self.clock.sleep, monotonic=self.clock.monotonic, **kwargs)
+
+    def assert_error(self, code, call):
+        with self.assertRaises(C.ClientError) as error:
+            call()
+        self.assertEqual(error.exception.code, code)
+
+    def test_relay_never_starts_listener_and_preserves_pkce_resource_and_proof(self):
+        c = self.client()
+        with patch.object(C, "CallbackListener", side_effect=AssertionError("no loopback allowed")):
+            self.assertEqual(c.connect()["status"], "connected")
+        self.assertEqual(self.transport.starts, 1)
+        self.assertEqual(self.transport.code_exchanges, 1)
+        self.assertEqual(self.transport.polls, 2)
+        self.assertEqual(self.clock.delays, [2, 2])
+        self.assertEqual(self.events[0]["callback_mode"], "relay")
+        self.assertEqual(len(self.transport.poll_secret), 43)
+        self.assertNotIn(self.transport.poll_secret, json.dumps(self.events))
+        self.assertNotIn("code_verifier", self.events[0]["authorization_url"])
+        c.connect()
+        self.assertEqual(self.transport.registrations, 1)
+
+    def test_relay_is_default_on_mac_and_linux_but_legacy_ready_grant_reuses(self):
+        for platform in ("darwin", "linux"):
+            with patch.object(C.sys, "platform", platform):
+                self.assertEqual(C.SessionClient(store=MemoryStore()).callback_mode, "relay")
+        self.store.value = record()
+        self.assertEqual(self.client().connect()["status"], "connected")
+        self.assertEqual(self.transport.registrations, 0)
+        self.assertEqual(self.transport.starts, 0)
+
+    def test_wrong_start_callback_or_complete_binding_stops_without_token_exchange(self):
+        for stage, change in (("start", {"redirect_uri": "https://evil.invalid/callback"}),
+                              ("start", {"expires_in": 301}),
+                              ("complete", {"state": "wrong-state"}),
+                              ("complete", {"iss": "https://evil.invalid"}),
+                              ("complete", {"code": "bad"})):
+            with self.subTest(stage=stage, change=change):
+                self.transport.start_patch = change if stage == "start" else None
+                self.transport.complete_patch = change if stage == "complete" else None
+                self.assert_error("invalid_relay_response", self.client().connect)
+        self.assertEqual(self.transport.code_exchanges, 0)
+        self.assertIsNone(self.store.value)
+
+    def test_relay_denial_or_expiry_never_restarts_authorization(self):
+        for response, code in ((self.transport.response({"status": "denied"}), "authorization_denied"),
+                               (self.transport.response({"error": "invalid_grant"}, 400), "authorization_failed")):
+            with self.subTest(code=code):
+                self.transport = RelayTransport(self.store)
+                self.transport.poll_override = lambda count: response
+                self.assert_error(code, self.client().connect)
+                self.assertEqual(self.transport.registrations, 1)
+                self.assertEqual(self.transport.starts, 1)
+                self.assertEqual(self.transport.polls, 1)
+                self.assertEqual(self.transport.code_exchanges, 0)
+
+    def test_relay_polling_is_bounded_and_honors_retry_after(self):
+        self.transport.poll_override = lambda count: self.transport.response({"error": "temporarily_unavailable"}, 429, {"Retry-After": "3"}) if count == 1 else None
+        self.assertEqual(self.client().connect()["status"], "connected")
+        self.assertTrue(all(2 <= delay <= 60 for delay in self.clock.delays))
+        self.assertEqual(self.clock.delays[:2], [2, 3])
+        self.transport = RelayTransport(MemoryStore())
+        self.store = self.transport.store
+        self.transport.forever_pending = True
+        self.clock = FakeClock()
+        self.assert_error("authorization_timeout", self.client(authorization_timeout=6).connect)
+        self.assertEqual(self.transport.starts, 1)
+        self.assertLessEqual(self.clock.value, 6)
+        self.assertEqual(self.transport.code_exchanges, 0)
+
+    def test_network_ambiguity_does_not_retry_poll_or_start_a_second_flow(self):
+        def fail(count):
+            raise C.ClientError("network_error")
+        self.transport.poll_override = fail
+        self.assert_error("network_error", self.client().connect)
+        self.assertEqual(self.transport.starts, 1)
+        self.assertEqual(self.transport.polls, 1)
+        self.assertEqual(self.transport.code_exchanges, 0)
+        self.assertIsNone(self.store.value)
+
+
+@unittest.skipUnless(C.os.name == "posix", "POSIX credential-store checks")
+class PosixStoreTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.base = Path(self.temp.name).resolve()
+        self.directory = self.base / "state"
+        self.store = C.PosixPrivateFileStore(directory=self.directory)
+
+    def assert_error(self, code, call):
+        with self.assertRaises(C.ClientError) as error:
+            call()
+        self.assertEqual(error.exception.code, code)
+
+    def test_private_modes_atomic_record_and_no_residual_probes(self):
+        self.store.prepare()
+        self.assertEqual(C.stat.S_IMODE(self.directory.stat().st_mode), 0o700)
+        self.assertEqual(list(self.directory.iterdir()), [])
+        self.assertIsNone(self.store.load())
+        self.store.save(record())
+        path = self.directory / "credentials.json"
+        self.assertEqual(C.stat.S_IMODE(path.stat().st_mode), 0o600)
+        self.assertEqual(path.stat().st_nlink, 1)
+        self.assertEqual(self.store.load(), record())
+        self.assertEqual([p.name for p in self.directory.iterdir()], ["credentials.json"])
+        with C.ProcessLock(self.directory):
+            self.assertEqual(self.store.load(), record())
+        self.store.delete()
+        self.assertIsNone(self.store.load())
+
+    def test_unsafe_file_and_directory_permissions_fail_without_chmod(self):
+        self.directory.mkdir(mode=0o755)
+        self.assert_error("state_directory_unsafe", self.store.prepare)
+        self.assertEqual(C.stat.S_IMODE(self.directory.stat().st_mode), 0o755)
+        self.directory.chmod(0o700)
+        path = self.directory / "credentials.json"
+        path.write_text('{"synthetic":"unchanged"}')
+        path.chmod(0o644)
+        self.assert_error("store_unsafe", lambda: self.store.save(record()))
+        self.assertEqual(path.read_text(), '{"synthetic":"unchanged"}')
+        self.assertEqual(C.stat.S_IMODE(path.stat().st_mode), 0o644)
+
+    def test_symlink_and_hardlink_records_and_symlink_parent_are_rejected(self):
+        self.directory.mkdir(mode=0o700)
+        outside = self.base / "outside.json"
+        outside.write_text('{"synthetic":"unchanged"}')
+        outside.chmod(0o600)
+        path = self.directory / "credentials.json"
+        path.symlink_to(outside)
+        self.assert_error("store_unsafe", self.store.load)
+        self.assert_error("store_unsafe", lambda: self.store.save(record()))
+        self.assertEqual(outside.read_text(), '{"synthetic":"unchanged"}')
+        path.unlink()
+        C.os.link(outside, path)
+        self.assert_error("store_unsafe", self.store.load)
+        path.unlink()
+        link = self.base / "linked"
+        link.symlink_to(self.directory, target_is_directory=True)
+        self.assert_error("state_directory_unsafe", C.PosixPrivateFileStore(link / "nested").prepare)
+
+    def test_writable_ancestor_and_wrong_record_owner_fail_closed(self):
+        parent = self.base / "writable"
+        parent.mkdir(mode=0o777)
+        parent.chmod(0o777)
+        self.assert_error("state_directory_unsafe", C.PosixPrivateFileStore(parent / "state").prepare)
+        self.store.save(record())
+        inode = (self.directory / "credentials.json").stat().st_ino
+        original = C.os.fstat
+        def foreign(fd):
+            info = original(fd)
+            if info.st_ino == inode:
+                fields = list(info)
+                fields[4] = C.os.getuid() + 1
+                return C.os.stat_result(fields)
+            return info
+        with patch.object(C.os, "fstat", side_effect=foreign):
+            self.assert_error("store_unsafe", self.store.load)
+
+    def test_failed_fsync_preserves_old_atomic_record_and_removes_tempfile(self):
+        self.store.save(record())
+        before = (self.directory / "credentials.json").read_bytes()
+        with patch.object(C.os, "fsync", side_effect=OSError("synthetic failure")):
+            self.assert_error("store_unavailable", lambda: self.store.save(record(2)))
+        self.assertEqual((self.directory / "credentials.json").read_bytes(), before)
+        self.assertEqual(sorted(p.name for p in self.directory.iterdir()), ["credentials.json"])
+
+    def test_fifo_is_rejected_in_a_bounded_subprocess(self):
+        self.directory.mkdir(mode=0o700)
+        C.os.mkfifo(self.directory / "credentials.json", 0o600)
+        code = "import importlib.util,sys; s=importlib.util.spec_from_file_location('fifo_client',sys.argv[1]); m=importlib.util.module_from_spec(s);sys.modules[s.name]=m;s.loader.exec_module(m);m.PosixPrivateFileStore(sys.argv[2]).load()"
+        result = subprocess.run([sys.executable, "-c", code, str(SOURCE), str(self.directory)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=3)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(b"store_unsafe", result.stderr)
+        self.assertNotIn(b"refresh_token", result.stdout)
+
+    def test_new_process_and_changed_working_directory_reuse_same_private_record(self):
+        self.store.save(record())
+        other = self.base / "other-project"
+        other.mkdir()
+        code = "import importlib.util,sys,json; s=importlib.util.spec_from_file_location('reused_client',sys.argv[1]);m=importlib.util.module_from_spec(s);sys.modules[s.name]=m;s.loader.exec_module(m);r=m.PosixPrivateFileStore(sys.argv[2]).load();print(json.dumps({'state':r['state'],'client_id':r['client_id'],'has_refresh':bool(r['refresh_token'])}))"
+        result = subprocess.run([sys.executable, "-c", code, str(SOURCE), str(self.directory)],
+            cwd=other, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=3, check=True)
+        value = json.loads(result.stdout)
+        self.assertEqual(value['state'], 'ready')
+        self.assertEqual(value['client_id'], record()['client_id'])
+        self.assertTrue(value['has_refresh'])
+        self.assertNotIn(record()['refresh_token'].encode(), result.stdout)
+
+    def test_file_refresh_pending_survives_new_process_without_old_token_replay(self):
+        self.store.save(dict(record(), state='refresh_pending'))
+        code = "import importlib.util,sys; s=importlib.util.spec_from_file_location('pending_client',sys.argv[1]);m=importlib.util.module_from_spec(s);sys.modules[s.name]=m;s.loader.exec_module(m);p=m.PROFILES['staging'];c=m.SessionClient(p,store=m.PosixPrivateFileStore(sys.argv[2]),state_dir=sys.argv[2]);c.call('list_relation_keys',{},non_interactive=True)"
+        result = subprocess.run([sys.executable, "-c", code, str(SOURCE), str(self.directory)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=3)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(b"reauth_required", result.stderr)
+        self.assertNotIn(record()['refresh_token'].encode(), result.stderr)
+        self.assertEqual(self.store.load()['state'], 'refresh_pending')
+
+    def test_lock_file_permissions_and_hardlinks_are_rejected(self):
+        self.directory.mkdir(mode=0o700)
+        lock = self.directory / 'authorization.lock'
+        lock.write_text('')
+        lock.chmod(0o644)
+        self.assert_error('store_unsafe', lambda: C.ProcessLock(self.directory).__enter__())
+        lock.chmod(0o600)
+        C.os.link(lock, self.directory / 'second-link')
+        self.assert_error('store_unsafe', lambda: C.ProcessLock(self.directory).__enter__())
+
+    def test_capabilities_disclose_file_protection_and_host_retention(self):
+        c = C.SessionClient(PROFILE, store=self.store, state_dir=self.directory)
+        result = c.capabilities()
+        self.assertTrue(result['secure_store_available'])
+        self.assertEqual(result['credential_protection'], 'owner-only-file')
+        self.assertTrue(result['persistence_requires_host_retention'])
+        self.assertEqual(result['callback_mode'], 'relay')
+        self.assertFalse(result['requires_local_callback'])
 
 
 if __name__ == "__main__":

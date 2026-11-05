@@ -42,7 +42,7 @@ TOOLS = frozenset((
 MAX_RESPONSE = 4 * 1024 * 1024
 MAX_INPUT = 32 * 1024
 SENSITIVE_KEYS = frozenset(("access_token", "refresh_token", "code_verifier",
-    "client_secret", "authorization", "completion_ticket"))
+    "client_secret", "authorization", "completion_ticket", "poll_secret"))
 
 
 class ClientError(Exception):
@@ -318,6 +318,210 @@ class MacKeychainStore:
             self._cf.CFRelease(handle)
 
 
+def _default_state_directory(profile):
+    return (Path.home() / ("Library/Application Support" if sys.platform == "darwin" else ".local/share")
+            / "elsewhere-news/native-v1" / profile.name)
+
+
+def _private_directory(directory):
+    """Open a private directory by descriptor; never follow an application symlink."""
+    path = Path(directory)
+    if (os.name != "posix" or not path.is_absolute() or ".." in path.parts
+        or not getattr(os, "O_NOFOLLOW", 0) or not getattr(os, "O_DIRECTORY", 0)):
+        raise ClientError("state_directory_unsafe")
+    uid = os.getuid()
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+    fd = None
+    try:
+        fd = os.open(path.anchor, flags)
+        parts = path.parts[1:]
+        if not parts:
+            raise ClientError("state_directory_unsafe")
+        for index, part in enumerate(parts):
+            try:
+                child = os.open(part, flags, dir_fd=fd)
+            except FileNotFoundError:
+                try:
+                    os.mkdir(part, 0o700, dir_fd=fd)
+                except FileExistsError:
+                    pass
+                child = os.open(part, flags, dir_fd=fd)
+            info = os.fstat(child)
+            mode = stat.S_IMODE(info.st_mode)
+            final = index == len(parts) - 1
+            # Root-owned sticky temporary parents are safe only before the private leaf.
+            sticky_parent = (not final and info.st_uid == 0 and bool(mode & stat.S_ISVTX))
+            if (not stat.S_ISDIR(info.st_mode) or info.st_uid not in (0, uid)
+                or (mode & 0o022 and not sticky_parent)
+                or (final and (info.st_uid != uid or mode != 0o700))):
+                os.close(child)
+                raise ClientError("state_directory_unsafe")
+            os.close(fd)
+            fd = child
+        return fd
+    except ClientError:
+        if fd is not None:
+            os.close(fd)
+        raise
+    except OSError:
+        if fd is not None:
+            os.close(fd)
+        raise ClientError("state_directory_unsafe") from None
+
+
+def _private_file(fd):
+    info = os.fstat(fd)
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+        or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1):
+        raise ClientError("store_unsafe")
+    return info
+
+
+class PosixPrivateFileStore:
+    """Owner-only persistent OAuth state, not an encrypted or same-UID-isolated vault."""
+    name = "posix-private-file"
+    filename = "credentials.json"
+
+    def __init__(self, directory):
+        self.directory = Path(directory)
+
+    def _open_record(self, directory, missing_ok=True):
+        flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)
+        try:
+            fd = os.open(self.filename, flags, dir_fd=directory)
+        except FileNotFoundError:
+            if missing_ok:
+                return None
+            raise ClientError("store_invalid") from None
+        except OSError:
+            raise ClientError("store_unsafe") from None
+        try:
+            _private_file(fd)
+        except Exception:
+            os.close(fd)
+            raise
+        return fd
+
+    @staticmethod
+    def _write_all(fd, payload):
+        view = memoryview(payload)
+        while view:
+            count = os.write(fd, view)
+            if count <= 0:
+                raise ClientError("store_unavailable")
+            view = view[count:]
+
+    def prepare(self):
+        directory = _private_directory(self.directory)
+        probe = ".store-probe-" + secrets.token_hex(16)
+        fd = None
+        try:
+            existing = self._open_record(directory)
+            if existing is not None:
+                os.close(existing)
+            fd = os.open(probe, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+                         | getattr(os, "O_CLOEXEC", 0), 0o600, dir_fd=directory)
+            _private_file(fd)
+            marker = secrets.token_bytes(24)
+            self._write_all(fd, marker)
+            os.fsync(fd)
+            os.lseek(fd, 0, os.SEEK_SET)
+            if os.read(fd, len(marker) + 1) != marker:
+                raise ClientError("store_unavailable")
+            os.unlink(probe, dir_fd=directory)
+            probe = None
+            os.fsync(directory)
+        except ClientError:
+            raise
+        except OSError:
+            raise ClientError("store_unavailable") from None
+        finally:
+            if fd is not None:
+                os.close(fd)
+            if probe is not None:
+                try:
+                    os.unlink(probe, dir_fd=directory)
+                except FileNotFoundError:
+                    pass
+            os.close(directory)
+
+    def load(self):
+        directory = _private_directory(self.directory)
+        fd = None
+        try:
+            fd = self._open_record(directory)
+            if fd is None:
+                return None
+            with os.fdopen(fd, "rb", closefd=False) as stream:
+                value = stream.read(65537)
+            if len(value) > 65536:
+                raise ClientError("store_invalid")
+            return _json(value)
+        except ClientError:
+            raise
+        except OSError:
+            raise ClientError("store_unavailable") from None
+        finally:
+            if fd is not None:
+                os.close(fd)
+            os.close(directory)
+
+    def save(self, record):
+        try:
+            value = json.dumps(record, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()
+        except (TypeError, ValueError, UnicodeError):
+            raise ClientError("store_invalid") from None
+        if len(value) > 65536:
+            raise ClientError("store_invalid")
+        directory = _private_directory(self.directory)
+        temporary = ".credentials-" + secrets.token_hex(16) + ".tmp"
+        fd = None
+        try:
+            existing = self._open_record(directory)
+            if existing is not None:
+                os.close(existing)
+            fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+                         | getattr(os, "O_CLOEXEC", 0), 0o600, dir_fd=directory)
+            _private_file(fd)
+            self._write_all(fd, value)
+            os.fsync(fd)
+            # Recheck the destination before replacement; insecure credentials are never chmodded.
+            existing = self._open_record(directory)
+            if existing is not None:
+                os.close(existing)
+            os.replace(temporary, self.filename, src_dir_fd=directory, dst_dir_fd=directory)
+            temporary = None
+            os.fsync(directory)
+        except ClientError:
+            raise
+        except OSError:
+            raise ClientError("store_unavailable") from None
+        finally:
+            if fd is not None:
+                os.close(fd)
+            if temporary is not None:
+                try:
+                    os.unlink(temporary, dir_fd=directory)
+                except FileNotFoundError:
+                    pass
+            os.close(directory)
+
+    def delete(self):
+        directory = _private_directory(self.directory)
+        try:
+            fd = self._open_record(directory)
+            if fd is not None:
+                os.close(fd)
+                os.unlink(self.filename, dir_fd=directory)
+                os.fsync(directory)
+        except ClientError:
+            raise
+        except OSError:
+            raise ClientError("store_unavailable") from None
+        finally:
+            os.close(directory)
+
+
 class UnavailableStore:
     name = "unavailable"
     def prepare(self):
@@ -326,28 +530,31 @@ class UnavailableStore:
     save = lambda self, record: self.prepare()
 
 
-def default_store(profile):
+def default_store(profile, directory=None):
     if sys.platform == "darwin":
         return MacKeychainStore(account=profile.name)
-    # No CLI keyring fallback: secret-tool may show an unlock prompt in background.
+    if sys.platform.startswith("linux"):
+        return PosixPrivateFileStore(directory if directory is not None else _default_state_directory(profile))
     return UnavailableStore()
 
 
 class ProcessLock:
     def __init__(self, directory, timeout=10):
         self.directory, self.timeout, self.fd = Path(directory), timeout, None
+        self.directory_fd = None
 
     def __enter__(self):
         try:
             import fcntl
-            self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-            if self.directory.is_symlink() or self.directory.stat().st_uid != os.getuid():
-                raise ClientError("state_directory_unsafe")
-            os.chmod(self.directory, 0o700)
-            self.fd = os.open(self.directory / "authorization.lock",
-                os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
-            if not stat.S_ISREG(os.fstat(self.fd).st_mode):
-                raise ClientError("state_directory_unsafe")
+            self.directory_fd = _private_directory(self.directory)
+            flags = (os.O_RDWR | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
+                     | getattr(os, "O_CLOEXEC", 0))
+            try:
+                self.fd = os.open("authorization.lock", flags | os.O_CREAT | os.O_EXCL,
+                                  0o600, dir_fd=self.directory_fd)
+            except FileExistsError:
+                self.fd = os.open("authorization.lock", flags, dir_fd=self.directory_fd)
+            _private_file(self.fd)
             deadline = time.monotonic() + self.timeout
             while True:
                 try:
@@ -359,20 +566,19 @@ class ProcessLock:
                     time.sleep(0.05)
             return self
         except ClientError:
-            if self.fd is not None:
-                os.close(self.fd)
-                self.fd = None
+            self.__exit__()
             raise
         except (OSError, ImportError):
-            if self.fd is not None:
-                os.close(self.fd)
-                self.fd = None
+            self.__exit__()
             raise ClientError("state_directory_unavailable") from None
 
     def __exit__(self, *args):
         if self.fd is not None:
             os.close(self.fd)
             self.fd = None
+        if self.directory_fd is not None:
+            os.close(self.directory_fd)
+            self.directory_fd = None
 
 
 class CallbackListener:
@@ -447,16 +653,19 @@ class CallbackListener:
 class SessionClient:
     def __init__(self, profile=PROFILES["production"], store=None, transport=None,
                  browser_opener=None, state_dir=None, emit=None, now=None,
-                 authorization_timeout=300):
+                 authorization_timeout=300, callback_mode=None, sleep=None, monotonic=None):
         if profile not in PROFILES.values():
             raise ClientError("invalid_profile")
         self.profile = profile
-        self.store = store if store is not None else default_store(profile)
+        self.state_dir = Path(state_dir) if state_dir else _default_state_directory(profile)
+        self.store = store if store is not None else default_store(profile, self.state_dir)
         self.transport = transport if transport is not None else HttpTransport()
         self.browser_opener = browser_opener if browser_opener is not None else _open_default_browser
-        self.state_dir = Path(state_dir) if state_dir else (
-            Path.home() / ("Library/Application Support" if sys.platform == "darwin" else ".local/share")
-            / "elsewhere-news/native-v1" / profile.name)
+        self.callback_mode = callback_mode if callback_mode is not None else "relay"
+        if self.callback_mode not in ("relay", "loopback"):
+            raise ClientError("invalid_callback_mode")
+        self.sleep = sleep if sleep is not None else time.sleep
+        self.monotonic = monotonic if monotonic is not None else time.monotonic
         self.emit = emit if emit is not None else lambda event: None
         self.now = now if now is not None else time.time
         self.authorization_timeout = authorization_timeout
@@ -567,51 +776,123 @@ class SessionClient:
             "access_token": token, "refresh_token": response["refresh_token"],
             "expires_at": min(self.now() + response["expires_in"], claims["exp"])}
 
+    def _register(self, redirect_uri):
+        registered = self._request_json("POST", self.profile.issuer + "/oauth/register", {
+            "client_name": "elsewhere-news", "client_uri": "https://elsewhere.news",
+            "software_id": "elsewhere-news-cli", "software_version": VERSION,
+            "redirect_uris": [redirect_uri], "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"], "token_endpoint_auth_method": "none", "scope": SCOPES})
+        client_id = registered.get("client_id")
+        try:
+            uuid.UUID(client_id)
+        except (ValueError, TypeError, AttributeError):
+            raise ClientError("invalid_registration_response") from None
+        if (registered.get("token_endpoint_auth_method") != "none" or "client_secret" in registered
+            or registered.get("redirect_uris") != [redirect_uri]
+            or set(registered.get("grant_types", [])) != {"authorization_code", "refresh_token"}
+            or registered.get("response_types") != ["code"]
+            or set(str(registered.get("scope", "")).split()) != set(SCOPES.split())):
+            raise ClientError("invalid_registration_response")
+        return client_id
+
+    def _authorization_url(self, client_id, redirect_uri, state, challenge):
+        return self.profile.issuer + "/oauth/authorize?" + urllib.parse.urlencode({
+            "response_type": "code", "client_id": client_id, "redirect_uri": redirect_uri,
+            "scope": SCOPES, "state": state, "resource": self.profile.resource,
+            "code_challenge": challenge, "code_challenge_method": "S256"})
+
+    def _show_authorization(self, url):
+        try:
+            opened = bool(self.browser_opener(url))
+        except Exception:
+            opened = False
+        self._event({"event": "authorization_required", "profile": self.profile.name,
+                     "authorization_url": url, "browser_opened": opened,
+                     "callback_mode": self.callback_mode})
+
+    def _relay_code(self, client_id, state, challenge):
+        redirect_uri = self.profile.issuer + "/oauth/client/callback"
+        poll_secret = secrets.token_urlsafe(32)
+        self.secret_values.append(poll_secret)
+        started_at = self.monotonic()
+        flow = self._request_json("POST", self.profile.issuer + "/oauth/client/start", {
+            "client_id": client_id, "code_challenge": challenge, "state": state,
+            "poll_secret_hash": hashlib.sha256(poll_secret.encode()).hexdigest()})
+        try:
+            uuid.UUID(flow.get("flow_id"))
+        except (ValueError, TypeError, AttributeError):
+            raise ClientError("invalid_relay_response") from None
+        if (flow.get("redirect_uri") != redirect_uri or type(flow.get("expires_in")) is not int
+            or not 1 <= flow["expires_in"] <= 300 or type(flow.get("interval")) is not int
+            or not 2 <= flow["interval"] <= 30):
+            raise ClientError("invalid_relay_response")
+        deadline = started_at + min(flow["expires_in"], self.authorization_timeout, 300)
+        self._show_authorization(self._authorization_url(client_id, redirect_uri, state, challenge))
+        interval = flow["interval"]
+        while True:
+            remaining = deadline - self.monotonic()
+            if remaining < interval:
+                raise ClientError("authorization_timeout")
+            self.sleep(interval)
+            if self.monotonic() >= deadline:
+                raise ClientError("authorization_timeout")
+            polled = self.transport.request("POST", self.profile.issuer + "/oauth/client/poll",
+                headers={"Accept": "application/json", "Content-Type": "application/json"},
+                body=json.dumps({"flow_id": flow["flow_id"], "poll_secret": poll_secret},
+                                separators=(",", ":")).encode())
+            if polled.status == 429:
+                retry = self._retry_after(polled)
+                interval = max(interval, min(60, max(2, retry if retry is not None else 2)))
+                continue
+            if polled.status != 200:
+                raise ClientError("authorization_failed" if polled.status < 500 else "temporarily_unavailable")
+            response = _json(polled.body)
+            status = response.get("status")
+            if status == "pending":
+                next_interval = response.get("interval", interval)
+                if type(next_interval) is not int or not 2 <= next_interval <= 30:
+                    raise ClientError("invalid_relay_response")
+                interval = max(interval, next_interval)
+                continue
+            if status == "denied":
+                raise ClientError("authorization_denied")
+            code = response.get("code")
+            if (status != "complete" or response.get("iss") != self.profile.issuer
+                or not isinstance(response.get("state"), str)
+                or not hmac.compare_digest(response["state"], state)
+                or not isinstance(code, str) or not re.fullmatch(r"[A-Za-z0-9._~-]{16,512}", code)):
+                raise ClientError("invalid_relay_response")
+            self.secret_values.append(code)
+            return code
+
     def _authorize(self):
         self._metadata()
         verifier, state = secrets.token_urlsafe(48), secrets.token_urlsafe(32)
         self.secret_values.append(verifier)
         challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
-        callback = CallbackListener(state, self.profile.issuer)
+        callback = None
         try:
-            registered = self._request_json("POST", self.profile.issuer + "/oauth/register", {
-                "client_name": "elsewhere-news", "client_uri": "https://elsewhere.news",
-                "software_id": "elsewhere-news-cli", "software_version": VERSION,
-                "redirect_uris": [callback.redirect_uri], "grant_types": ["authorization_code", "refresh_token"],
-                "response_types": ["code"], "token_endpoint_auth_method": "none",
-                "scope": SCOPES})
-            client_id = registered.get("client_id")
-            try:
-                uuid.UUID(client_id)
-            except (ValueError, TypeError, AttributeError):
-                raise ClientError("invalid_registration_response") from None
-            if (registered.get("token_endpoint_auth_method") != "none" or "client_secret" in registered
-                or registered.get("redirect_uris") != [callback.redirect_uri]
-                or set(registered.get("grant_types", [])) != {"authorization_code", "refresh_token"}
-                or registered.get("response_types") != ["code"]
-                or set(str(registered.get("scope", "")).split()) != set(SCOPES.split())):
-                raise ClientError("invalid_registration_response")
-            url = self.profile.issuer + "/oauth/authorize?" + urllib.parse.urlencode({
-                "response_type": "code", "client_id": client_id, "redirect_uri": callback.redirect_uri,
-                "scope": SCOPES, "state": state, "resource": self.profile.resource,
-                "code_challenge": challenge, "code_challenge_method": "S256"})
-            try:
-                opened = bool(self.browser_opener(url))
-            except Exception:
-                opened = False
-            self._event({"event": "authorization_required", "profile": self.profile.name,
-                         "authorization_url": url, "browser_opened": opened})
-            code = callback.wait(self.authorization_timeout)
+            if self.callback_mode == "relay":
+                redirect_uri = self.profile.issuer + "/oauth/client/callback"
+                client_id = self._register(redirect_uri)
+                code = self._relay_code(client_id, state, challenge)
+            else:
+                callback = CallbackListener(state, self.profile.issuer)
+                redirect_uri = callback.redirect_uri
+                client_id = self._register(redirect_uri)
+                self._show_authorization(self._authorization_url(client_id, redirect_uri, state, challenge))
+                code = callback.wait(self.authorization_timeout)
             self.secret_values.append(code)
             response = self._request_json("POST", self.profile.issuer + "/oauth/token", {
                 "grant_type": "authorization_code", "client_id": client_id, "code": code,
-                "code_verifier": verifier, "redirect_uri": callback.redirect_uri,
+                "code_verifier": verifier, "redirect_uri": redirect_uri,
                 "resource": self.profile.resource}, form=True)
             record = self._tokens(response, client_id)
             self.store.save(record)
             return record
         finally:
-            callback.close()
+            if callback is not None:
+                callback.close()
 
     def _ready(self, record, non_interactive=False):
         if record is None:
@@ -787,6 +1068,9 @@ class SessionClient:
             available, code = False, error.code
         result = {"event": "capabilities", "profile": self.profile.name,
             "secure_store": self.store.name, "secure_store_available": available,
+            "credential_protection": "owner-only-file" if isinstance(self.store, PosixPrivateFileStore) else self.store.name,
+            "persistence_requires_host_retention": True,
+            "callback_mode": self.callback_mode, "requires_local_callback": self.callback_mode == "loopback",
             "transport": "streamable_http", "tools": sorted(TOOLS)}
         if code:
             result["code"] = code
@@ -864,6 +1148,7 @@ def _parser():
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--profile", choices=tuple(PROFILES), default=argparse.SUPPRESS)
     common.add_argument("--non-interactive", action="store_true", default=argparse.SUPPRESS)
+    common.add_argument("--callback-mode", choices=("relay", "loopback"), default=argparse.SUPPRESS)
     parser = Parser(description=__doc__, parents=[common])
     commands = parser.add_subparsers(dest="command", required=True)
     for name in ("capabilities", "status", "connect", "call"):
@@ -882,7 +1167,8 @@ def main(argv=None):
         print(json.dumps(event, ensure_ascii=False, separators=(",", ":")), flush=True)
     try:
         args = _parser().parse_args(argv)
-        client = SessionClient(PROFILES[args.profile], emit=output)
+        client = SessionClient(PROFILES[args.profile], emit=output,
+                               callback_mode=getattr(args, "callback_mode", None))
         if args.command == "capabilities":
             result = client.capabilities()
         elif args.command == "status":
