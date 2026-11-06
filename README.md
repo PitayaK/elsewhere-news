@@ -25,8 +25,9 @@ credential file (`0600`) outside workspaces, Skill caches and synchronized or
 exported folders. Linux permissions restrict access by other OS identities;
 the file is not promised to be encrypted or hidden from processes running as
 the same user. The normal client interface never returns tokens to the Agent.
-Authorization uses a fixed HTTPS callback relay, allowing the browser
-and command execution to use different networks.
+Cloud clients make connection and read requests through the Website origin.
+The user's browser completes the existing authorization flow, and the cloud
+client receives the result through the HTTPS callback relay.
 
 ## Source and package
 
@@ -39,7 +40,7 @@ requesting host MCP installation.
 Build a reviewed package with Python's standard library:
 
 ```sh
-python3 scripts/build_plugin.py --output /absolute/path/elsewhere-news-3.1.1.zip
+python3 scripts/build_plugin.py --output /absolute/path/elsewhere-news-3.1.2.zip
 ```
 
 The builder requires the client pin in `SKILL.md` to match its actual bytes.

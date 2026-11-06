@@ -110,13 +110,13 @@ class SyntheticTransport:
                 "scopes_supported": C.SCOPES.split()}
             value.update(self.server_patch or {})
             return self.response(value)
-        if url == PROFILE.issuer + "/oauth/register":
+        if url == PROFILE.connection_url("register"):
             self.registrations += 1
             self.registration = json.loads(body)
             value = dict(self.registration, client_id="00000000-0000-4000-8000-000000000001")
             value.update(self.registration_patch or {})
             return self.response(value, 201)
-        if url == PROFILE.issuer + "/oauth/token":
+        if url == PROFILE.connection_url("token"):
             values = {key: items[0] for key, items in urllib.parse.parse_qs(body.decode()).items()}
             if values["resource"] != PROFILE.resource:
                 raise AssertionError("resource binding missing")
@@ -596,7 +596,8 @@ class RelayTransport(SyntheticTransport):
         self.poll_secret = None
 
     def request(self, method, url, *, headers=None, body=None):
-        if url == PROFILE.issuer + "/oauth/client/start":
+        if url == PROFILE.connection_url("start"):
+            self.requests.append((method, url))
             self.starts += 1
             self.start_body = json.loads(body)
             if set(self.start_body) != {"client_id", "code_challenge", "state", "poll_secret_hash"}:
@@ -607,7 +608,8 @@ class RelayTransport(SyntheticTransport):
                      "expires_in": 300, "interval": 2}
             value.update(self.start_patch or {})
             return self.response(value, 201)
-        if url == PROFILE.issuer + "/oauth/client/poll":
+        if url == PROFILE.connection_url("poll"):
+            self.requests.append((method, url))
             self.polls += 1
             values = json.loads(body)
             self.poll_secret = values["poll_secret"]
@@ -628,7 +630,7 @@ class RelayTransport(SyntheticTransport):
 
     def browser(self, url):
         values = {key: value[0] for key, value in urllib.parse.parse_qs(urllib.parse.urlsplit(url).query).items()}
-        if (urllib.parse.urlsplit(url).scheme + "://" + urllib.parse.urlsplit(url).netloc != PROFILE.issuer
+        if (url.split("?", 1)[0] != PROFILE.connection_url("authorize")
             or values["redirect_uri"] != PROFILE.issuer + "/oauth/client/callback"
             or values["state"] != self.start_body["state"]
             or values["code_challenge"] != self.start_body["code_challenge"]
@@ -672,6 +674,17 @@ class RelayTests(unittest.TestCase):
         self.assertNotIn("code_verifier", self.events[0]["authorization_url"])
         c.connect()
         self.assertEqual(self.transport.registrations, 1)
+
+        # A connection saved with the canonical issuer still rotates through
+        # the first-party Website endpoints in a later process.
+        self.store.value["expires_at"] = NOW - 1
+        self.assertEqual(self.client().connect()["status"], "connected")
+        self.assertEqual(self.transport.refreshes, 1)
+        self.assertEqual(self.transport.registrations, 1)
+        self.assertEqual(self.store.value["issuer"], PROFILE.issuer)
+        website = urllib.parse.urlsplit(PROFILE.resource).netloc
+        self.assertTrue(all(urllib.parse.urlsplit(url).netloc == website
+                            for _, url in self.transport.requests))
 
     def test_relay_is_default_on_mac_and_linux_but_legacy_ready_grant_reuses(self):
         for platform in ("darwin", "linux"):

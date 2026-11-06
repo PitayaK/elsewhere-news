@@ -28,7 +28,7 @@ import uuid
 from dataclasses import dataclass
 
 
-VERSION = "3.1.0"
+VERSION = "3.1.2"
 SERVICE = "news.elsewhere.native-oauth.v1"
 SCOPES = "elsewhere.read offline_access"
 PROTOCOLS = ("2025-11-25", "2025-06-18", "2025-03-26")
@@ -62,9 +62,12 @@ class Profile:
     def resource_metadata(self):
         return self.resource.removesuffix("/mcp") + "/.well-known/oauth-protected-resource/mcp"
 
+    def connection_url(self, operation):
+        return self.resource.removesuffix("/mcp") + "/api/agent-connect/" + operation
+
     @property
     def server_metadata(self):
-        return self.issuer + "/.well-known/oauth-authorization-server"
+        return self.connection_url("metadata")
 
 
 PROFILES = {
@@ -777,7 +780,7 @@ class SessionClient:
             "expires_at": min(self.now() + response["expires_in"], claims["exp"])}
 
     def _register(self, redirect_uri):
-        registered = self._request_json("POST", self.profile.issuer + "/oauth/register", {
+        registered = self._request_json("POST", self.profile.connection_url("register"), {
             "client_name": "elsewhere-news", "client_uri": "https://elsewhere.news",
             "software_id": "elsewhere-news-cli", "software_version": VERSION,
             "redirect_uris": [redirect_uri], "grant_types": ["authorization_code", "refresh_token"],
@@ -796,7 +799,9 @@ class SessionClient:
         return client_id
 
     def _authorization_url(self, client_id, redirect_uri, state, challenge):
-        return self.profile.issuer + "/oauth/authorize?" + urllib.parse.urlencode({
+        endpoint = (self.profile.connection_url("authorize") if self.callback_mode == "relay"
+                    else self.profile.issuer + "/oauth/authorize")
+        return endpoint + "?" + urllib.parse.urlencode({
             "response_type": "code", "client_id": client_id, "redirect_uri": redirect_uri,
             "scope": SCOPES, "state": state, "resource": self.profile.resource,
             "code_challenge": challenge, "code_challenge_method": "S256"})
@@ -815,7 +820,7 @@ class SessionClient:
         poll_secret = secrets.token_urlsafe(32)
         self.secret_values.append(poll_secret)
         started_at = self.monotonic()
-        flow = self._request_json("POST", self.profile.issuer + "/oauth/client/start", {
+        flow = self._request_json("POST", self.profile.connection_url("start"), {
             "client_id": client_id, "code_challenge": challenge, "state": state,
             "poll_secret_hash": hashlib.sha256(poll_secret.encode()).hexdigest()})
         try:
@@ -836,7 +841,7 @@ class SessionClient:
             self.sleep(interval)
             if self.monotonic() >= deadline:
                 raise ClientError("authorization_timeout")
-            polled = self.transport.request("POST", self.profile.issuer + "/oauth/client/poll",
+            polled = self.transport.request("POST", self.profile.connection_url("poll"),
                 headers={"Accept": "application/json", "Content-Type": "application/json"},
                 body=json.dumps({"flow_id": flow["flow_id"], "poll_secret": poll_secret},
                                 separators=(",", ":")).encode())
@@ -883,7 +888,7 @@ class SessionClient:
                 self._show_authorization(self._authorization_url(client_id, redirect_uri, state, challenge))
                 code = callback.wait(self.authorization_timeout)
             self.secret_values.append(code)
-            response = self._request_json("POST", self.profile.issuer + "/oauth/token", {
+            response = self._request_json("POST", self.profile.connection_url("token"), {
                 "grant_type": "authorization_code", "client_id": client_id, "code": code,
                 "code_verifier": verifier, "redirect_uri": redirect_uri,
                 "resource": self.profile.resource}, form=True)
@@ -906,7 +911,7 @@ class SessionClient:
         pending = dict(record, state="refresh_pending")
         self.store.save(pending)  # Durable, atomic marker precedes the rotating request.
         try:
-            response = self._request_json("POST", self.profile.issuer + "/oauth/token", {
+            response = self._request_json("POST", self.profile.connection_url("token"), {
                 "grant_type": "refresh_token", "client_id": record["client_id"],
                 "refresh_token": record["refresh_token"], "resource": self.profile.resource}, form=True)
             updated = self._tokens(response, record["client_id"])

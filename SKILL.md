@@ -2,7 +2,7 @@
 name: elsewhere-news
 description: Connect an Elsewhere reader account through the included client for cited reporting, knowledge graphs and personal reading context; use public pages for anonymous discovery.
 metadata:
-  version: "3.1.1"
+  version: "3.1.2"
   bundle-version: 3
   user-invocable: true
   openclaw:
@@ -26,6 +26,7 @@ not. The Skill URL is instructions, not a login page.
 
 Bundle 3 includes `scripts/elsewhere.py`, a Python 3.10+ client that performs
 OAuth and calls the existing `https://elsewhere.news/mcp` resource itself.
+It sends cloud connection and read requests to the Elsewhere Website origin.
 Use this client for the whole task. It does not require a host MCP connection
 or a separately installed plugin.
 
@@ -67,7 +68,7 @@ on Elsewhere's page. Honor any approval explicitly required by the host.
      clickable link in the current private conversation. Ask them to open it
      in their own regular browser, sign into their **Elsewhere reader account**
      and approve access. Keep the original cloud process waiting for the result.
-     The user's browser handles sign-in, including any Google verification.
+     The user's browser follows the Elsewhere link through sign-in and consent.
      Skip the Agent's cloud browser, private sign-in form and browser takeover
      for this handoff. The link is valid for at most five minutes.
    - **Agent on the user's own computer:** Let the client open the user's
@@ -81,11 +82,11 @@ on Elsewhere's page. Honor any approval explicitly required by the host.
    then continue the user's task. A downloaded file, opened login page or
    completed browser login alone is not proof of connection.
 
-Reviewed client artifact: `https://raw.githubusercontent.com/PitayaK/elsewhere-news/0cc6853596b20367560674af787ca28c32dce9d2/scripts/elsewhere.py`
+Reviewed client artifact: `https://elsewhere.news/.well-known/elsewhere-skill/scripts/elsewhere-3.1.2.py`
 
-Client bytes: 53604
+Client bytes: 53828
 
-Client SHA-256: 7f6a3b1d5e05247f864e1cb87f6301d02fa87ece632801a474c63b2472a16d6d
+Client SHA-256: ad34f12f2af326c696019e229df07779de7a92e7b8b08409f0e7a391c54c55a0
 
 Do the setup work for the user. Do not ask them to visit a Harness's MCP or
 plugin settings, paste a server URL, copy a key, install a private test plugin,
@@ -153,10 +154,10 @@ Validate the shown keys, key order and types, schema `2` and name
 `elsewhere-news`; compare the release values using the ordered rules below:
 
 ```json
-{"schema":2,"name":"elsewhere-news","version":"3.1.1","bundle-version":3,"transport":"remote-mcp","mcp-url":"https://elsewhere.news/mcp"}
+{"schema":2,"name":"elsewhere-news","version":"3.1.2","bundle-version":3,"transport":"remote-mcp","mcp-url":"https://elsewhere.news/mcp"}
 ```
 
-Compare it with this Skill (`3.1.1`, bundle `3`):
+Compare it with this Skill (`3.1.2`, bundle `3`):
 
 1. Invalid or unavailable: continue with this reviewed bundle.
 2. A valid manifest with a different transport/MCP URL, or a higher version
