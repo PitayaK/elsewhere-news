@@ -8,16 +8,17 @@ Send this to your Agent:
 > 请安装并连接 elsewhere-news：https://elsewhere.news/skill.md
 
 The Agent installs the Skill and runs its included connection client in its
-own persistent environment. It opens Elsewhere sign-in in the browser and
-reuses authorization for later requests and scheduled work. You sign into your
-Elsewhere reader account and approve access; no MCP settings or key handling
-are needed. Knowledge-graph and personal reads stay tied to that account.
+own persistent environment. For a cloud Agent, open the authorization link it
+sends in your usual browser. A local Agent can open that browser directly.
+Sign into your Elsewhere reader account and approve access. The Agent reuses
+authorization for later requests and scheduled work. Knowledge-graph and
+personal reads stay tied to that account.
 
 For a cloud Agent, the client and saved state stay on its cloud computer, so
 your own computer can be off. The host must provide persistent private storage,
-HTTPS execution and a browser sign-in path. A disposable runtime cannot retain
-the connection. Each scheduled run reuses the existing connection and verifies
-the expected Elsewhere account before reading data.
+HTTPS execution and a way to hand the live link to you. A disposable runtime
+cannot retain the connection. Each scheduled run reuses the existing connection
+and verifies the expected Elsewhere account before reading data.
 
 The client uses macOS Keychain or a Linux private directory (`0700`) and
 credential file (`0600`) outside workspaces, Skill caches and synchronized or
@@ -38,7 +39,7 @@ requesting host MCP installation.
 Build a reviewed package with Python's standard library:
 
 ```sh
-python3 scripts/build_plugin.py --output /absolute/path/elsewhere-news-3.1.0.zip
+python3 scripts/build_plugin.py --output /absolute/path/elsewhere-news-3.1.1.zip
 ```
 
 The builder requires the client pin in `SKILL.md` to match its actual bytes.

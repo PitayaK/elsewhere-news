@@ -51,7 +51,7 @@ class PackageTests(unittest.TestCase):
 
     def test_release_and_immutable_same_repository_source_are_valid_downloads(self) -> None:
         urls = [
-            "https://elsewhere.news/.well-known/elsewhere-skill/scripts/elsewhere-3.1.0.py",
+            "https://elsewhere.news/.well-known/elsewhere-skill/scripts/elsewhere-3.1.1.py",
             "https://raw.githubusercontent.com/PitayaK/elsewhere-news/0123456789abcdef0123456789abcdef01234567/scripts/elsewhere.py",
         ]
         for index, url in enumerate(urls):

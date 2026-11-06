@@ -2,7 +2,7 @@
 name: elsewhere-news
 description: Connect an Elsewhere reader account through the included client for cited reporting, knowledge graphs and personal reading context; use public pages for anonymous discovery.
 metadata:
-  version: "3.1.0"
+  version: "3.1.1"
   bundle-version: 3
   user-invocable: true
   openclaw:
@@ -29,11 +29,11 @@ OAuth and calls the existing `https://elsewhere.news/mcp` resource itself.
 Use this client for the whole task. It does not require a host MCP connection
 or a separately installed plugin.
 
-Use the current Agent's own persistent execution environment for installation,
-login and later calls. A cloud Agent runs the client on its cloud computer so
-the user's devices can be off. Require a host-provided persistent private user
-home; a temporary or disposable runtime must stop before OAuth. Keep this
-runtime for later tasks instead of moving credentials between computers.
+Install and run the client in the Agent's own persistent execution environment.
+A cloud Agent starts the client, receives the authorization result, and keeps
+the saved credentials on its cloud computer. The user's browser is only for
+sign-in and consent. Require a host-provided persistent private user home and
+stop before OAuth if the runtime is known to be disposable.
 
 The client uses macOS Keychain, or a private Linux state directory with mode
 `0700` and credential files with mode `0600`. Linux file storage relies on OS
@@ -43,31 +43,40 @@ synchronized folders and exported artifacts. Never inspect or print its tokens,
 copy its authorization files, or use chat, arguments or environment variables
 to carry credentials.
 
-Use the host's existing authorized execution and browser tools. The install-and-
-connect request already authorizes this client's normal credential persistence;
-do not add a separate question about saving tokens. Honor required platform
-approvals without changing Harness settings or disabling protections. If an
-approval or unavailable capability adds a human step, report that limitation.
+The install-and-connect request already authorizes running this reviewed client,
+starting the Elsewhere flow and saving its credentials in the current runtime.
+Proceed directly to the authorization handoff. The user gives account consent
+on Elsewhere's page. Honor any approval explicitly required by the host.
 
-1. Install this Skill and its reviewed client in the host's supported Skill
-   directory, preserving other skills. If installing files individually, get
-   the client from the exact reviewed artifact below and verify its byte count
-   and SHA-256 before running it. A mismatch stops installation.
+1. For an explicit install-and-connect request, read the current Skill at the
+   supplied official entry URL before using a cached copy. Install its
+   reviewed bundle in the host's supported Skill directory, preserving user
+   context and other skills. If installing
+   files individually, verify the client's byte count and SHA-256 against the
+   exact artifact below before running it. A mismatch stops installation.
 2. In that installed Skill directory, run
    `python3 scripts/elsewhere.py capabilities`. Require available credential
-   storage, HTTPS execution and a browser login path in this same Agent.
-   A writable directory alone does not prove persistence across future tasks;
-   verify that the host retains this private home. Stop if it is temporary.
-3. Run `python3 scripts/elsewhere.py connect`. Reuse its existing authenticated
-   connection. For a new connection, let the client open the authorization
-   page. If it emits `authorization_required` with `browser_opened: false`,
-   keep the process running and automatically open its `authorization_url`
-   through the current Agent's browser. Let the user sign into their
-   **Elsewhere reader account** through the host's private sign-in form or
-   browser handoff, and approve access there. The client uses a fixed
-   HTTPS callback relay, so the browser and execution process need not share
-   a `127.0.0.1` network. Follow this pending flow; do not create a second login,
-   rewrite callbacks or expose a local server through a tunnel.
+   storage and HTTPS execution in this Agent. Use the private home of the
+   persistent runtime. Verify cross-task reuse in a later task before claiming
+   it works.
+3. Run `python3 scripts/elsewhere.py connect` with a live session you can
+   monitor while the user signs in. The client reuses an existing connection
+   and uses the HTTPS relay for new authorizations by default.
+   - **Cloud or remote Agent (including Dot):** On `authorization_required`,
+     promptly give the requesting user the exact `authorization_url` as a
+     clickable link in the current private conversation. Ask them to open it
+     in their own regular browser, sign into their **Elsewhere reader account**
+     and approve access. Keep the original cloud process waiting for the result.
+     The user's browser handles sign-in, including any Google verification.
+     Skip the Agent's cloud browser, private sign-in form and browser takeover
+     for this handoff. The link is valid for at most five minutes.
+   - **Agent on the user's own computer:** Let the client open the user's
+     default browser. If `browser_opened` is false, give the user the same link.
+
+   Share only the authorization link, and only with the requesting user.
+   Keep all secrets and callback results in the client. Use one pending flow
+   and keep its process alive until success or expiry. If it expires, a fresh
+   attempt needs a fresh link.
 4. Wait for the client's authenticated, zero-unit connection check to succeed,
    then continue the user's task. A downloaded file, opened login page or
    completed browser login alone is not proof of connection.
@@ -81,9 +90,9 @@ Client SHA-256: 7f6a3b1d5e05247f864e1cb87f6301d02fa87ece632801a474c63b2472a16d6d
 Do the setup work for the user. Do not ask them to visit a Harness's MCP or
 plugin settings, paste a server URL, copy a key, install a private test plugin,
 or create a new chat to make this client callable. Preserve platform consent
-requirements. If this runtime cannot execute the client, open/reach its login
-flow, or persist credentials safely, report that concrete failure; do not call
-it connected or substitute anonymous knowledge-graph access.
+requirements. If this runtime cannot run the client, hand off a live link,
+receive the result or persist credentials safely, report that concrete failure.
+Require a successful authenticated check for connected knowledge-graph access.
 
 The client's normal interface returns status or business results, not credentials.
 Reuse saved authorization across requests and scheduled runs. Starting a new
@@ -144,10 +153,10 @@ Validate the shown keys, key order and types, schema `2` and name
 `elsewhere-news`; compare the release values using the ordered rules below:
 
 ```json
-{"schema":2,"name":"elsewhere-news","version":"3.1.0","bundle-version":3,"transport":"remote-mcp","mcp-url":"https://elsewhere.news/mcp"}
+{"schema":2,"name":"elsewhere-news","version":"3.1.1","bundle-version":3,"transport":"remote-mcp","mcp-url":"https://elsewhere.news/mcp"}
 ```
 
-Compare it with this Skill (`3.1.0`, bundle `3`):
+Compare it with this Skill (`3.1.1`, bundle `3`):
 
 1. Invalid or unavailable: continue with this reviewed bundle.
 2. A valid manifest with a different transport/MCP URL, or a higher version
@@ -157,9 +166,9 @@ Compare it with this Skill (`3.1.0`, bundle `3`):
    the manifest.
 3. Same or older version with the same transport/MCP URL: continue with this
    reviewed bundle.
-4. Higher version with the same major, bundle, transport and MCP URL: briefly
-   report that a reviewed bundle update is available. Do not replace code
-   while completing the task.
+4. Higher version with the same major, bundle, transport and MCP URL: during
+   ordinary use, report that a reviewed update is available. An explicit
+   install-and-connect request follows the installation steps above.
 
 Bundle 3 includes executable client code. Install its reviewed components as a
 whole; never derive or execute replacement code from the version manifest.
